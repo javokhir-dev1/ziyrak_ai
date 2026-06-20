@@ -14,6 +14,15 @@ const config: Config = {
         'accent-light': '#e1e0ff',
         'accent-dark': '#2f2ebe',
 
+        // Brand colors (for new dashboard)
+        brand: {
+          50: '#f0fdfa',
+          100: '#ccfbf1',
+          500: '#14b8a6',
+          600: '#0d9488',
+          900: '#134e4a',
+        },
+
         // Design system
         primary: '#4648d4',
         'primary-container': '#6063ee',

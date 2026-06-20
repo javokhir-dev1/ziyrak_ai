@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { RefreshCw, Users, MessageSquare, Mail, Tag, Zap, CheckCircle } from 'lucide-react';
+import { Zap, Mail, MessageSquare, Tag, Users, Send } from 'lucide-react';
 import { getInstagramStatus, getSettings, getTodayStats } from '@/lib/api';
 
 export default function DashboardPage() {
@@ -28,87 +28,115 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 px-8 py-5 flex justify-between items-center sticky top-0 z-10">
-        <div>
-          <h2 className="text-[24px] font-semibold text-on-surface tracking-tight leading-[32px]">Bosh sahifa</h2>
-          <p className="text-[13px] leading-[18px] text-on-surface-variant mt-0.5">Umumiy holat va statistika</p>
-        </div>
-        <button onClick={load} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg text-on-surface hover:bg-surface-container-high transition-colors text-[14px] font-medium disabled:opacity-50">
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Yangilash
-        </button>
-      </header>
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        {/* BEGIN: HeaderSection */}
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-4">
+          <div>
+            <h1 className="text-[24px] font-semibold tracking-tight text-on-surface leading-[32px]">Bosh sahifa</h1>
+            <p className="text-[13px] text-on-surface-variant mt-0.5 leading-[18px]">Umumiy holat va statistika</p>
+          </div>
+          {/* Refresh Button */}
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-high transition-colors text-[14px] font-medium disabled:opacity-50 shadow-sm"
+            type="button"
+          >
+            <svg aria-hidden="true" className={`-ml-0.5 h-4 w-4 text-on-surface-variant ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            Yangilash
+          </button>
+        </header>
+        {/* END: HeaderSection */}
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-[1440px] mx-auto flex flex-col gap-12">
-
-          {/* Metric cards */}
-          <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-
-            {/* Akkaunt */}
-            <div className="bg-white rounded-2xl p-7 border border-slate-100 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] flex items-start gap-5 min-h-[140px]">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] text-white shrink-0 shadow-sm">
-                <svg fill="none" height="24" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="24">
-                  <rect height="20" rx="5" ry="5" width="20" x="2" y="2"/>
-                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-                  <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
-                </svg>
-              </div>
-              <div className="flex flex-col justify-between h-full py-1 min-w-0 flex-1">
-                <span className="text-sm font-medium text-slate-500">Akkaunt</span>
-                <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
-                  <h3 className="text-lg font-semibold text-slate-900 truncate">
-                    {account ? `@${account.username}` : 'Ulanmagan'}
-                  </h3>
+        <main className="space-y-8">
+          {/* BEGIN: StatsGrid */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            
+            {/* Account Card */}
+            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-[#f09433]/5 to-[#bc1888]/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+              <div className="flex items-start gap-4 relative">
+                <div className="w-12 h-12 shrink-0 rounded-xl bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] flex items-center justify-center text-white shadow-sm">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <rect height="20" rx="5" ry="5" width="20" x="2" y="2"></rect>
+                    <path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"></path>
+                    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line>
+                  </svg>
                 </div>
-                <span className="text-sm text-slate-500 mt-2">{account ? 'Ulangan' : '.env'}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-on-surface-variant truncate">Akkaunt</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <h2 className="text-[18px] font-semibold text-on-surface truncate">
+                      {account ? `@${account.username}` : 'Ulanmagan'}
+                    </h2>
+                    {account && (
+                      <svg className="w-5 h-5 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" fillRule="evenodd"></path>
+                      </svg>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+              <div className="mt-6 pt-4 border-t border-outline-variant/30 flex items-center justify-between">
+                <span className={`inline-flex items-center gap-x-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${account ? 'bg-[#10B981]/10 text-[#059669] ring-[#10B981]/20' : 'bg-surface-container-high text-on-surface-variant ring-outline-variant/50'}`}>
+                  <svg aria-hidden="true" className={`h-1.5 w-1.5 ${account ? 'fill-[#10B981]' : 'fill-on-surface-variant'}`} viewBox="0 0 6 6"><circle cx="3" cy="3" r="3"></circle></svg>
+                  {account ? 'Ulangan' : '.env kiritilmagan'}
+                </span>
+              </div>
+            </article>
 
-            {/* Obunachi */}
-            <div className="bg-white rounded-2xl p-7 border border-slate-100 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] flex items-start gap-5 min-h-[140px]">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                <Users size={24} strokeWidth={2} />
+            {/* Subscribers Card */}
+            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
+              <div className="flex items-center gap-4 relative">
+                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
+                  <Users size={24} className="text-primary" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium text-on-surface-variant">Obunachilar soni</p>
+                </div>
               </div>
-              <div className="flex flex-col justify-between h-full py-1">
-                <span className="text-sm font-medium text-slate-500">Obunachilar soni</span>
-                <h2 className="text-4xl font-extrabold text-slate-700 tracking-tight mt-2">
+              <div className="mt-4 flex items-baseline">
+                <p className="text-4xl font-bold tracking-tight text-on-surface">
                   {account?.followers_count ? account.followers_count.toLocaleString() : '—'}
-                </h2>
+                </p>
               </div>
-            </div>
+            </article>
 
-            {/* Bugun postlarga yuborilgan javoblar */}
-            <div className="bg-white rounded-2xl p-7 border border-slate-100 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] flex items-start gap-5 min-h-[140px]">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                <MessageSquare size={24} strokeWidth={2} />
+            {/* Post Replies Card */}
+            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
+              <div className="flex items-start gap-4 relative">
+                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
+                  <MessageSquare size={24} className="text-primary" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium text-on-surface-variant leading-tight">Bugun postlarga yuborilgan javoblar</p>
+                </div>
               </div>
-              <div className="flex flex-col justify-between h-full py-1">
-                <span className="text-sm font-medium text-slate-500 line-clamp-2 leading-snug">Bugun postlarga yuborilgan javoblar</span>
-                <h2 className="text-4xl font-extrabold text-slate-700 tracking-tight mt-2">
-                  {todayStats.commentReplies}
-                </h2>
+              <div className="mt-4 flex items-baseline">
+                <p className="text-4xl font-bold tracking-tight text-on-surface">{todayStats.commentReplies}</p>
               </div>
-            </div>
+            </article>
 
-            {/* Bugun DM olgan foydalanuvchilar */}
-            <div className="bg-white rounded-2xl p-7 border border-slate-100 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] flex items-start gap-5 min-h-[140px]">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                <Mail size={24} strokeWidth={2} />
+            {/* DM Recipients Card */}
+            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
+              <div className="flex items-start gap-4 relative">
+                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
+                  <Send size={24} className="text-primary" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium text-on-surface-variant leading-tight">Bugun DM olgan foydalanuvchilar</p>
+                </div>
               </div>
-              <div className="flex flex-col justify-between h-full py-1">
-                <span className="text-sm font-medium text-slate-500 line-clamp-2 leading-snug">Bugun DM olgan foydalanuvchilar</span>
-                <h2 className="text-4xl font-extrabold text-slate-700 tracking-tight mt-2">
-                  {todayStats.dmUsers}
-                </h2>
+              <div className="mt-4 flex items-baseline">
+                <p className="text-4xl font-bold tracking-tight text-on-surface">{todayStats.dmUsers}</p>
               </div>
-            </div>
+            </article>
 
           </section>
+          {/* END: StatsGrid */}
 
           {/* Faol xizmatlar */}
           <section className="bg-white/80 backdrop-blur-xl border border-[#E2E8F0] shadow-[0_4px_20px_rgba(0,0,0,0.04)] rounded-2xl p-8">
@@ -139,8 +167,9 @@ export default function DashboardPage() {
               ))}
             </div>
           </section>
+          {/* END: ActiveServicesSection */}
 
-        </div>
+        </main>
       </div>
     </div>
   );

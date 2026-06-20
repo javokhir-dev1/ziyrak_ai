@@ -3,23 +3,38 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, MessageSquare, Mail, Filter,
+  LayoutDashboard, Zap,
   FileText, Link2, Settings, ChevronDown,
 } from 'lucide-react';
 import { getInstagramStatus } from '@/lib/api';
 
 const navItems = [
-  { href: '/',         icon: LayoutDashboard, label: 'Bosh sahifa' },
-  { href: '/comments', icon: MessageSquare,   label: 'Post avto javob' },
-  { href: '/dm',       icon: Mail,            label: 'DM avto javob' },
-  { href: '/keywords', icon: Filter,          label: "Kalit so'zlar" },
-  { href: '/logs',     icon: FileText,        label: 'Loglar' },
+  { href: '/',           icon: LayoutDashboard, label: 'Bosh sahifa' },
+  { href: '/automation', icon: Zap,             label: 'Avtomatizatsiya' },
+  { href: '/logs',       icon: FileText,        label: 'Loglar' },
 ];
 
 const bottomItems = [
   { href: '/settings', icon: Settings, label: 'Sozlamalar' },
   { href: '/webhook',  icon: Link2,    label: 'Webhook' },
 ];
+
+const NavLink = ({ href, icon: Icon, label, pathname }: { href: string; icon: any; label: string; pathname: string }) => {
+  const active = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg text-[15px] font-medium transition-all duration-200 ${
+        active
+          ? 'bg-primary-fixed text-primary'
+          : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+      }`}
+    >
+      <Icon size={18} className={`flex-shrink-0 ${active ? 'text-primary' : ''}`} />
+      {label}
+    </Link>
+  );
+};
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -31,29 +46,12 @@ export default function Sidebar() {
       .catch(() => setAccount({ connected: false }));
   }, []);
 
-  const NavLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
-    const active = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
-    return (
-      <Link
-        href={href}
-        className={`flex items-center gap-3 px-4 py-3 rounded-lg text-[15px] font-medium transition-all duration-200 ${
-          active
-            ? 'bg-primary-fixed text-primary'
-            : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-        }`}
-      >
-        <Icon size={18} className={`flex-shrink-0 ${active ? 'text-primary' : ''}`} />
-        {label}
-      </Link>
-    );
-  };
-
   return (
     <aside className="fixed top-0 left-0 h-screen w-64 bg-surface border-r border-outline-variant/30 flex flex-col z-40">
 
       {/* Logo */}
       <div className="px-6 py-6 mb-1">
-        <h1 className="text-2xl font-bold text-primary tracking-tight">InstaBot</h1>
+        <h1 className="text-2xl font-bold text-primary tracking-tight">Ziyrak AI</h1>
         <p className="text-[13px] text-on-surface-variant mt-0.5">Instagram AI Assistant</p>
       </div>
 
@@ -78,12 +76,12 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 flex flex-col gap-0.5 px-2 overflow-y-auto">
-        {navItems.map(item => <NavLink key={item.href} {...item} />)}
+        {navItems.map(item => <NavLink key={item.href} {...item} pathname={pathname} />)}
       </nav>
 
       {/* Bottom nav */}
       <div className="px-2 pb-2 border-t border-outline-variant/30 pt-2">
-        {bottomItems.map(item => <NavLink key={item.href} {...item} />)}
+        {bottomItems.map(item => <NavLink key={item.href} {...item} pathname={pathname} />)}
       </div>
 
       {/* User profile */}
