@@ -5,12 +5,15 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Zap,
   FileText, Link2, Settings, ChevronDown,
+  Sun, Moon, Bot,
 } from 'lucide-react';
 import { getInstagramStatus } from '@/lib/api';
+import { useTheme } from '@/components/ThemeProvider';
 
 const navItems = [
   { href: '/',           icon: LayoutDashboard, label: 'Bosh sahifa' },
   { href: '/automation', icon: Zap,             label: 'Avtomatizatsiya' },
+  { href: '/agents',     icon: Bot,             label: 'AI Agentlar' },
   { href: '/logs',       icon: FileText,        label: 'Loglar' },
 ];
 
@@ -38,6 +41,7 @@ const NavLink = ({ href, icon: Icon, label, pathname }: { href: string; icon: an
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
   const [account, setAccount] = useState<{ connected: boolean; username?: string } | null>(null);
 
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="fixed top-0 left-0 h-screen w-64 bg-surface border-r border-outline-variant/30 flex flex-col z-40">
+    <aside className="fixed top-0 left-0 h-screen w-64 bg-surface-container-lowest border-r border-outline-variant/30 flex flex-col z-40">
 
       {/* Logo */}
       <div className="px-6 py-6 mb-1">
@@ -57,7 +61,7 @@ export default function Sidebar() {
 
       {/* Account switcher */}
       <div className="px-3 mb-5">
-        <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-outline-variant/50 bg-surface-container-lowest hover:bg-surface-container-low transition-colors text-left group">
+        <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-outline-variant/50 bg-surface-container-low hover:bg-surface-container transition-colors text-left group">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] flex items-center justify-center text-white flex-shrink-0">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,17 +88,24 @@ export default function Sidebar() {
         {bottomItems.map(item => <NavLink key={item.href} {...item} pathname={pathname} />)}
       </div>
 
-      {/* User profile */}
+      {/* User profile + theme toggle */}
       <div className="px-4 py-4 border-t border-outline-variant/30 flex items-center gap-3">
         <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-bold text-sm flex-shrink-0">
           A
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-[14px] font-semibold text-on-surface leading-tight">Admin</p>
           <p className="text-[12px] text-on-surface-variant truncate">
             {account?.connected ? `@${account.username}` : 'Admin profili'}
           </p>
         </div>
+        <button
+          onClick={toggleTheme}
+          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors flex-shrink-0"
+          title={theme === 'dark' ? "Yorug' rejim" : 'Qorong\'u rejim'}
+        >
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
       </div>
     </aside>
   );

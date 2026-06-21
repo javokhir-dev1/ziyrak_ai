@@ -26,9 +26,69 @@ export const getLogs = (limit = 100) =>
 export const getTodayStats = () =>
   api.get('/api/logs/today-stats').then(r => r.data);
 
+// Agents
+export const getAgents = () => api.get('/api/agents').then(r => r.data);
+export const getAgent  = (id: number) => api.get(`/api/agents/${id}`).then(r => r.data);
+export const createAgent = (data: any) => api.post('/api/agents', data).then(r => r.data);
+export const updateAgent = (id: number, data: any) => api.patch(`/api/agents/${id}`, data).then(r => r.data);
+export const deleteAgent = (id: number) => api.delete(`/api/agents/${id}`).then(r => r.data);
+export const chatWithAgent = (id: number, messages: { role: string; text: string }[]) =>
+  api.post(`/api/agents/${id}/chat`, { messages }).then(r => r.data);
+
+export const streamChatWithAgent = async (
+  id: number,
+  messages: { role: string; text: string }[],
+  onChunk: (text: string) => void,
+): Promise<void> => {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+  const res = await fetch(`${API_URL}/api/agents/${id}/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.body) throw new Error('Stream not supported');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.text) onChunk(parsed.text);
+      } catch {}
+    }
+  }
+};
+
+// Automations
+export const getAutomations = () => api.get('/api/automations').then(r => r.data);
+export const getAutomation = (id: number) => api.get(`/api/automations/${id}`).then(r => r.data);
+export const createAutomation = (data: any) => api.post('/api/automations', data).then(r => r.data);
+export const updateAutomation = (id: number, data: any) => api.patch(`/api/automations/${id}`, data).then(r => r.data);
+export const toggleAutomation = (id: number) => api.patch(`/api/automations/${id}/toggle`).then(r => r.data);
+export const deleteAutomation = (id: number) => api.delete(`/api/automations/${id}`).then(r => r.data);
+
 // Comment Rules
 export const getCommentRules = () => api.get('/api/comment-rules').then(r => r.data);
 export const createCommentRule = (data: any) => api.post('/api/comment-rules', data).then(r => r.data);
 export const updateCommentRule = (id: number, data: any) => api.patch(`/api/comment-rules/${id}`, data).then(r => r.data);
 export const deleteCommentRule = (id: number) => api.delete(`/api/comment-rules/${id}`).then(r => r.data);
 export const toggleCommentRule = (id: number) => api.patch(`/api/comment-rules/${id}/toggle`).then(r => r.data);
+
+// Global (fallback) rule — '__global__' postId ishlatadi
+export const getGlobalRule = () =>
+  getCommentRules().then(d => (d.rules || []).find((r: any) => r.postId === '__global__') || null);
+
+// Agent chat history
+export const getAgentMessages = (id: number) => api.get(`/api/agents/${id}/messages`).then(r => r.data);
+export const saveAgentMessage = (id: number, role: string, text: string) =>
+  api.post(`/api/agents/${id}/messages`, { role, text }).then(r => r.data);
+export const clearAgentMessages = (id: number) => api.delete(`/api/agents/${id}/messages`).then(r => r.data);

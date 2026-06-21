@@ -1,173 +1,211 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Zap, Mail, MessageSquare, Tag, Users, Send } from 'lucide-react';
-import { getInstagramStatus, getSettings, getTodayStats } from '@/lib/api';
+import { Zap, Mail, MessageSquare, Users, MessageCircle, ArrowRight, FileText } from 'lucide-react';
+import { getInstagramStatus, getTodayStats, getLogs, getCommentRules } from '@/lib/api';
+import { useTheme } from '@/components/ThemeProvider';
+
+interface Log {
+  id: number;
+  type: 'success' | 'error' | 'info';
+  action: string;
+  message: string;
+  user: string;
+  userMessage?: string;
+  timestamp: string;
+}
+
+const logDotColor: Record<string, string> = {
+  success: 'bg-[#4edea3] shadow-[0_0_8px_rgba(78,222,163,0.4)]',
+  error:   'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.4)]',
+  info:    'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)]',
+};
+
+const logActionColor: Record<string, string> = {
+  success: 'text-[#00885d]',
+  error:   'text-red-500',
+  info:    'text-blue-500',
+};
 
 export default function DashboardPage() {
-  const [account, setAccount] = useState<any>(null);
-  const [settings, setSettings] = useState<any>(null);
-  const [todayStats, setTodayStats] = useState({ commentReplies: 0, dmUsers: 0 });
-  const [loading, setLoading] = useState(true);
+  const { theme } = useTheme();
+  const [account,      setAccount]      = useState<any>(null);
+  const [stats,        setStats]        = useState<{ commentReplies: number; dmUsers: number } | null>(null);
+  const [activeRules,  setActiveRules]  = useState<number | null>(null);
+  const [logs,         setLogs]         = useState<Log[]>([]);
+  const [loading,      setLoading]      = useState(true);
 
-  const load = async () => {
-    setLoading(true);
-    await Promise.allSettled([
+  useEffect(() => {
+    Promise.allSettled([
       getInstagramStatus().then(d => { if (d.connected) setAccount(d.account); }),
-      getSettings().then(d => setSettings(d.settings)),
-      getTodayStats().then(d => setTodayStats({ commentReplies: d.commentReplies, dmUsers: d.dmUsers })),
-    ]);
-    setLoading(false);
-  };
+      getTodayStats().then(d => setStats(d)),
+      getLogs(8).then(d => setLogs(d.logs || [])),
+      getCommentRules().then(d => {
+        const n = (d.rules || []).filter((r: any) => r.postId !== '__global__' && r.isActive).length;
+        setActiveRules(n);
+      }),
+    ]).finally(() => setLoading(false));
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  const statCards = [
+    {
+      label: 'Bugun javob berilgan izohlar',
+      value: stats?.commentReplies ?? null,
+      icon: MessageSquare,
+      iconBg: 'bg-[#ebebfc] text-[#4648d4]',
+    },
+    {
+      label: 'Bugun DM yuborilgan foydalanuvchilar',
+      value: stats?.dmUsers ?? null,
+      icon: Mail,
+      iconBg: 'bg-[#f3ebfc] text-[#8127cf]',
+    },
+    {
+      label: 'Faol izoh avto-javob',
+      value: activeRules,
+      icon: Zap,
+      iconBg: 'bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400',
+    },
+  ];
 
-  const services = [
-    { label: 'DM avto javob', on: settings?.dmAutoReplyEnabled, icon: Mail, color: 'emerald' },
-    { label: 'Post avto javob', on: settings?.autoReplyEnabled, icon: MessageSquare, color: 'emerald' },
-    { label: "Kalit so'z filtri", on: settings?.keywordsEnabled, icon: Tag, color: 'emerald' },
+  const quickActions = [
+    { href: '/automation',          icon: Zap,            label: 'Avtomatizatsiya',    desc: 'Barcha avtomatizatsiyalar' },
+    { href: '/automation/dm',       icon: Mail,           label: 'DM sozlash',         desc: 'Avto-javob xabarlarini sozla' },
+    { href: '/automation/comments', icon: MessageCircle,  label: 'Izoh avto-javob',    desc: 'Post izohlari uchun avto-javob' },
+    { href: '/logs',                icon: FileText,       label: 'Loglar',             desc: 'Bot faoliyati tarixi' },
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        {/* BEGIN: HeaderSection */}
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-4">
-          <div>
-            <h1 className="text-[24px] font-semibold tracking-tight text-on-surface leading-[32px]">Bosh sahifa</h1>
-            <p className="text-[13px] text-on-surface-variant mt-0.5 leading-[18px]">Umumiy holat va statistika</p>
-          </div>
-          {/* Refresh Button */}
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-high transition-colors text-[14px] font-medium disabled:opacity-50 shadow-sm"
-            type="button"
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-8">
+        <main className="max-w-5xl mx-auto space-y-7">
+
+          {/* Welcome Banner */}
+          <section className="relative rounded-2xl overflow-hidden p-6 sm:p-8 text-white"
+            style={{ background: theme === 'dark'
+              ? 'linear-gradient(135deg, #0f0520 0%, #1e0a4a 40%, #2d1060 70%, #1a0533 100%)'
+              : 'linear-gradient(135deg, #4648d4 0%, #6344d8 30%, #8127cf 65%, #9b1dc0 100%)'
+            }}
           >
-            <svg aria-hidden="true" className={`-ml-0.5 h-4 w-4 text-on-surface-variant ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-            </svg>
-            Yangilash
-          </button>
-        </header>
-        {/* END: HeaderSection */}
-
-        <main className="space-y-8">
-          {/* BEGIN: StatsGrid */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            
-            {/* Account Card */}
-            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-br from-[#f09433]/5 to-[#bc1888]/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-              <div className="flex items-start gap-4 relative">
-                <div className="w-12 h-12 shrink-0 rounded-xl bg-gradient-to-tr from-[#f09433] via-[#e6683c] to-[#bc1888] flex items-center justify-center text-white shadow-sm">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <rect height="20" rx="5" ry="5" width="20" x="2" y="2"></rect>
-                    <path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"></path>
-                    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line>
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-on-surface-variant truncate">Akkaunt</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <h2 className="text-[18px] font-semibold text-on-surface truncate">
-                      {account ? `@${account.username}` : 'Ulanmagan'}
-                    </h2>
-                    {account && (
-                      <svg className="w-5 h-5 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" fillRule="evenodd"></path>
-                      </svg>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-outline-variant/30 flex items-center justify-between">
-                <span className={`inline-flex items-center gap-x-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${account ? 'bg-[#10B981]/10 text-[#059669] ring-[#10B981]/20' : 'bg-surface-container-high text-on-surface-variant ring-outline-variant/50'}`}>
-                  <svg aria-hidden="true" className={`h-1.5 w-1.5 ${account ? 'fill-[#10B981]' : 'fill-on-surface-variant'}`} viewBox="0 0 6 6"><circle cx="3" cy="3" r="3"></circle></svg>
-                  {account ? 'Ulangan' : '.env kiritilmagan'}
-                </span>
-              </div>
-            </article>
-
-            {/* Subscribers Card */}
-            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
-              <div className="flex items-center gap-4 relative">
-                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
-                  <Users size={24} className="text-primary" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-on-surface-variant">Obunachilar soni</p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline">
-                <p className="text-4xl font-bold tracking-tight text-on-surface">
-                  {account?.followers_count ? account.followers_count.toLocaleString() : '—'}
+            <div className="absolute inset-0 opacity-10"
+              style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 60%)' }} />
+            {theme === 'dark' && (
+              <div className="absolute inset-0 pointer-events-none"
+                style={{ backgroundImage: 'radial-gradient(ellipse at 20% 80%, rgba(139,92,246,0.25) 0%, transparent 55%), radial-gradient(ellipse at 80% 10%, rgba(99,60,180,0.2) 0%, transparent 50%)' }} />
+            )}
+            <div className="relative flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[14px] font-medium text-white/70 mb-1">Xush kelibsiz</p>
+                <h1 className="text-[24px] sm:text-[28px] font-bold tracking-tight leading-tight">
+                  {account ? `@${account.username}` : 'Ziyrak AI'}
+                </h1>
+                <p className="text-[14px] text-white/70 mt-1.5">
+                  {account ? 'Instagram hisobingiz muvaffaqiyatli ulangan.' : 'Instagram hisobingizni sozlamalardan ulang.'}
                 </p>
-              </div>
-            </article>
-
-            {/* Post Replies Card */}
-            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
-              <div className="flex items-start gap-4 relative">
-                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
-                  <MessageSquare size={24} className="text-primary" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-on-surface-variant leading-tight">Bugun postlarga yuborilgan javoblar</p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline">
-                <p className="text-4xl font-bold tracking-tight text-on-surface">{todayStats.commentReplies}</p>
-              </div>
-            </article>
-
-            {/* DM Recipients Card */}
-            <article className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/30 flex flex-col justify-between hover:shadow-card transition-shadow relative overflow-hidden group">
-              <div className="flex items-start gap-4 relative">
-                <div className="w-12 h-12 shrink-0 rounded-xl bg-primary-fixed flex items-center justify-center">
-                  <Send size={24} className="text-primary" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-on-surface-variant leading-tight">Bugun DM olgan foydalanuvchilar</p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-baseline">
-                <p className="text-4xl font-bold tracking-tight text-on-surface">{todayStats.dmUsers}</p>
-              </div>
-            </article>
-
-          </section>
-          {/* END: StatsGrid */}
-
-          {/* Faol xizmatlar */}
-          <section className="bg-white/80 backdrop-blur-xl border border-[#E2E8F0] shadow-[0_4px_20px_rgba(0,0,0,0.04)] rounded-2xl p-8">
-            <div className="flex items-center gap-3 mb-6">
-              <Zap size={24} className="text-primary fill-primary/20" />
-              <h3 className="text-[24px] font-semibold text-on-surface leading-[32px] tracking-[-0.01em]">Faol xizmatlar</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {services.map(({ label, on, icon: Icon }) => (
-                <div key={label} className={`rounded-xl p-5 border flex items-center justify-between transition-colors ${on
-                    ? 'bg-[#10B981]/5 border-[#10B981]/20 hover:border-[#10B981]/40'
-                    : 'bg-surface border-outline-variant/50 hover:border-outline'
-                  }`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${on ? 'bg-[#10B981]/10 text-[#10B981]' : 'bg-surface-container-high text-on-surface-variant'
-                      }`}>
-                      <Icon size={20} strokeWidth={2} />
-                    </div>
-                    <span className="text-[16px] font-medium text-on-surface leading-[24px]">{label}</span>
+                {account?.followers_count != null && (
+                  <div className="mt-3 inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg px-3 py-1.5">
+                    <Users size={14} className="text-white/80" />
+                    <span className="text-[14px] font-semibold text-white">
+                      {account.followers_count.toLocaleString()}
+                    </span>
+                    <span className="text-[13px] text-white/70">obunachilar</span>
                   </div>
-                  <span className={`px-3 py-1 text-[12px] leading-[16px] tracking-[0.05em] font-bold rounded-full border ${on
-                      ? 'bg-[#10B981]/10 text-[#059669] border-[#10B981]/20'
-                      : 'bg-slate-100 text-slate-600 border-slate-200'
-                    }`}>
-                    {on ? 'Yoqilgan' : "O'chirilgan"}
-                  </span>
-                </div>
-              ))}
+                )}
+              </div>
+              <div className="shrink-0 w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                  <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+                </svg>
+              </div>
             </div>
           </section>
-          {/* END: ActiveServicesSection */}
+
+          {/* Statistika kartlari */}
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {statCards.map(({ label, value, icon: Icon, iconBg }) => (
+              <div key={label} className="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-5 shadow-sm flex items-center gap-4">
+                <div className={`w-11 h-11 shrink-0 rounded-lg flex items-center justify-center ${iconBg}`}>
+                  <Icon size={20} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13px] text-on-surface-variant leading-[18px] mb-1">{label}</p>
+                  <p className="text-[26px] font-bold text-on-surface leading-none">
+                    {value === null ? (
+                      <span className="inline-block w-8 h-6 bg-surface-container rounded animate-pulse" />
+                    ) : value}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </section>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-7">
+
+            {/* Tezkor harakatlar */}
+            <section className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-[16px] font-semibold text-on-surface mb-4">Tezkor harakatlar</h3>
+              <div className="space-y-2">
+                {quickActions.map(({ href, icon: Icon, label, desc }) => (
+                  <Link key={href} href={href}
+                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-container-low transition-colors group">
+                    <div className="w-9 h-9 shrink-0 rounded-lg bg-primary-fixed flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors duration-200">
+                      <Icon size={17} strokeWidth={2} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[15px] font-medium text-on-surface leading-tight">{label}</p>
+                      <p className="text-[13px] text-on-surface-variant truncate">{desc}</p>
+                    </div>
+                    <ArrowRight size={15} className="text-outline-variant group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200 shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            </section>
+
+            {/* So'nggi faollik */}
+            <section className="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30">
+                <h3 className="text-[16px] font-semibold text-on-surface">So'nggi faollik</h3>
+                <Link href="/logs" className="text-[13px] text-primary hover:underline font-medium">Barchasini ko'rish</Link>
+              </div>
+              <div className="flex flex-col">
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="px-6 py-4 border-b border-outline-variant/30 last:border-b-0">
+                      <div className="h-4 w-40 bg-surface-container rounded animate-pulse mb-2" />
+                      <div className="h-3 w-24 bg-surface-container rounded animate-pulse" />
+                    </div>
+                  ))
+                ) : logs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-on-surface-variant">
+                    <Users size={28} className="mb-2 opacity-40" />
+                    <p className="text-[14px]">Hozircha faoliyat yo'q</p>
+                  </div>
+                ) : logs.map(log => (
+                  <div key={log.id} className="flex items-start px-6 py-4 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors">
+                    <span className={`mt-[6px] w-2 h-2 rounded-full shrink-0 ${logDotColor[log.type] ?? logDotColor.info}`} />
+                    <div className="ml-4 flex-1 min-w-0">
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className={`text-[15px] font-medium ${logActionColor[log.type] ?? logActionColor.info}`}>{log.action}</span>
+                        {log.user && <span className="text-[13px] font-semibold text-on-surface-variant">@{log.user}</span>}
+                      </div>
+                      {log.userMessage && (
+                        <p className="text-[12px] text-on-surface-variant/60 truncate">
+                          <span className="mr-1 text-on-surface-variant/40">↳</span>{log.userMessage}
+                        </p>
+                      )}
+                      {log.message && <p className="text-[14px] text-on-surface-variant mt-0.5 truncate">{log.message}</p>}
+                    </div>
+                    <span className="text-[12px] text-on-surface-variant/60 ml-4 shrink-0 mt-[2px]">
+                      {new Date(log.timestamp).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+          </div>
 
         </main>
       </div>

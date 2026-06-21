@@ -1,60 +1,630 @@
 'use client';
-import Link from 'next/link';
-import { MessageSquare, Mail, ArrowRight, Zap } from 'lucide-react';
 
-const cards = [
-  {
-    href: '/automation/comments',
-    icon: MessageSquare,
-    label: 'Komentlarga avtomatik javob',
-    description: 'Har bir post uchun alohida koment javob qoidalari va variantlar',
-    iconBg: 'bg-[#ebebfc] text-[#4648d4]',
-    hoverBorder: 'hover:border-[#4648d4]/10',
-    arrowHover: 'group-hover:text-[#4648d4]',
-  },
-  {
-    href: '/automation/dm',
-    icon: Mail,
-    label: 'DM Xabarlarga avtomatik javob',
-    description: 'Kiruvchi DM xabarlarga aylanadigan javoblar bilan avtomatik javob',
-    iconBg: 'bg-[#f3ebfc] text-[#8127cf]',
-    hoverBorder: 'hover:border-[#8127cf]/10',
-    arrowHover: 'group-hover:text-[#8127cf]',
-  },
-];
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Plus, Zap, MessageSquare, Send, ToggleLeft, ToggleRight,
+  Trash2, ChevronRight, Globe, Hash, CheckCircle, ArrowLeft, Save,
+} from 'lucide-react';
+import {
+  getAutomations, createAutomation, updateAutomation,
+  toggleAutomation, deleteAutomation, getInstagramPosts,
+} from '@/lib/api';
 
-export default function AutomationPage() {
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <header className="bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 px-8 py-5 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <Zap size={22} className="text-primary" />
-          <div>
-            <h2 className="text-[24px] font-semibold text-on-surface tracking-tight leading-[32px]">Avtomatizatsiya</h2>
-            <p className="text-[13px] text-on-surface-variant">Bo'limni tanlang</p>
+interface Automation {
+  id: number;
+  name: string;
+  triggerType: 'any' | 'keyword';
+  keywords: string[];
+  replyEnabled: boolean;
+  replyTemplates: string[];
+  dmEnabled: boolean;
+  dmTemplates: string[];
+  postScope: 'all' | 'specific';
+  postIds: string[];
+  postData: { id: string; caption?: string; thumbnail?: string }[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+interface FormState {
+  name: string;
+  triggerType: 'any' | 'keyword';
+  keywords: string[];
+  replyEnabled: boolean;
+  replyTemplates: string[];
+  dmEnabled: boolean;
+  dmTemplates: string[];
+  postScope: 'all' | 'specific';
+  postIds: string[];
+  postData: { id: string; caption?: string; thumbnail?: string }[];
+}
+
+const EMPTY_FORM: FormState = {
+  name: '',
+  triggerType: 'any',
+  keywords: [],
+  replyEnabled: false,
+  replyTemplates: [''],
+  dmEnabled: false,
+  dmTemplates: [''],
+  postScope: 'all',
+  postIds: [],
+  postData: [],
+};
+
+export default function AutomationCommentsPage() {
+  const router = useRouter();
+  const [automations, setAutomations] = useState<Automation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'list' | 'create'>('list');
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [kwInput, setKwInput] = useState('');
+  const [posts, setPosts] = useState<any[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const load = async () => {
+    try { setAutomations(await getAutomations()); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const loadPosts = async () => {
+    setPostsLoading(true);
+    try {
+      const res = await getInstagramPosts();
+      // backend { success, posts: [...] } qaytaradi
+      setPosts(res?.posts || res?.data || []);
+    } catch { setPosts([]); }
+    finally { setPostsLoading(false); }
+  };
+
+  const openCreate = () => {
+    setForm(EMPTY_FORM);
+    setKwInput('');
+    setView('create');
+    loadPosts();
+  };
+
+  const up = (patch: Partial<FormState>) => setForm(f => ({ ...f, ...patch }));
+
+  const addKw = () => {
+    const kw = kwInput.trim();
+    if (kw && !form.keywords.includes(kw)) up({ keywords: [...form.keywords, kw] });
+    setKwInput('');
+  };
+
+  const togglePost = (post: any) => {
+    const id = post.id;
+    if (form.postIds.includes(id)) {
+      up({ postIds: form.postIds.filter(p => p !== id), postData: form.postData.filter(p => p.id !== id) });
+    } else {
+      up({
+        postIds: [...form.postIds, id],
+        postData: [...form.postData, {
+          id,
+          caption: post.caption?.substring(0, 80),
+          thumbnail: post.thumbnail_url || post.media_url,
+        }],
+      });
+    }
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    if (!form.replyEnabled && !form.dmEnabled) return;
+    setSaving(true);
+    try {
+      await createAutomation({ ...form, isActive: true });
+      setView('list');
+      load();
+    } finally { setSaving(false); }
+  };
+
+  const handleToggle = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await toggleAutomation(id);
+    load();
+  };
+
+  const handleDelete = async (id: number) => {
+    await deleteAutomation(id);
+    setDeleteId(null);
+    load();
+  };
+
+  // ─── CREATE VIEW ─────────────────────────────────────────────────────────
+  if (view === 'create') {
+    const canSave = form.name.trim() && (form.replyEnabled || form.dmEnabled);
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        {/* Sticky header */}
+        <div className="flex-shrink-0 border-b border-outline-variant/30 px-8 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView('list')} className="text-on-surface-variant hover:text-on-surface transition-colors p-1">
+              <ArrowLeft size={20} />
+            </button>
+            <span className="font-semibold text-on-surface">Yangi avtomatizatsiya</span>
+          </div>
+          <button
+            onClick={save}
+            disabled={!canSave || saving}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
+            style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+          >
+            <Save size={14} />
+            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto p-8 space-y-4">
+          {/* Nom */}
+          <Card title="Avtomatizatsiya nomi">
+            <input
+              autoFocus
+              type="text"
+              value={form.name}
+              onChange={e => up({ name: e.target.value })}
+              placeholder='Masalan: "Yangi post izohlari"'
+              className="w-full px-4 py-3 rounded-xl bg-surface-variant text-on-surface placeholder:text-on-surface-variant/50 outline-none focus:ring-2 ring-primary/40 text-sm"
+            />
+          </Card>
+
+          {/* Trigger */}
+          <Card title="Trigger turi" desc="Qachon ishga tushsin?">
+            <div className="space-y-2">
+              {[
+                { val: 'any', label: 'Har qanday izohda', desc: 'Barcha izohlarga javob beradi' },
+                { val: 'keyword', label: "Kalit so'z bo'lganda", desc: "Faqat belgilangan so'zlarni o'z ichiga olgan izohlarda" },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => up({ triggerType: opt.val as any })}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
+                    form.triggerType === opt.val
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant/30 hover:border-outline-variant'
+                  }`}
+                >
+                  <div className="font-medium text-sm text-on-surface">{opt.label}</div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+            {form.triggerType === 'keyword' && (
+              <div className="mt-3">
+                <div className="flex gap-2 mb-2">
+                  <input
+                    value={kwInput}
+                    onChange={e => setKwInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addKw()}
+                    placeholder="Kalit so'z kiriting, Enter bosing..."
+                    className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-sm outline-none focus:ring-2 ring-primary/40"
+                  />
+                  <button onClick={addKw} className="px-3 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium whitespace-nowrap">
+                    Qo'sh
+                  </button>
+                </div>
+                {form.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {form.keywords.map(kw => (
+                      <span key={kw} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs">
+                        {kw}
+                        <button onClick={() => up({ keywords: form.keywords.filter(k => k !== kw) })} className="hover:text-error leading-none">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* Amallar */}
+          <Card title="Amallar" desc="Trigger ishga tushganda nima qilsin? Kamida bittasini tanlang.">
+            <div className="space-y-3">
+              {/* Izohga javob */}
+              <div className={`rounded-xl border transition-all ${form.replyEnabled ? 'border-primary/50' : 'border-outline-variant/30'}`}>
+                <button
+                  onClick={() => up({ replyEnabled: !form.replyEnabled })}
+                  className="w-full flex items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <MessageSquare size={16} className={form.replyEnabled ? 'text-primary' : 'text-on-surface-variant'} />
+                    <span className="font-medium text-sm text-on-surface">Izohga javob berish</span>
+                  </div>
+                  <span style={{
+                    width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                    border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                    backgroundColor: form.replyEnabled ? '#3B82F6' : '#E5E7EB',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                    transition: 'background-color 0.25s ease',
+                  }}>
+                    <span style={{
+                      display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      transform: form.replyEnabled ? 'translateX(16px)' : 'translateX(0px)',
+                      transition: 'transform 0.25s ease',
+                    }} />
+                  </span>
+                </button>
+                {form.replyEnabled && (
+                  <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
+                    <p className="text-xs text-on-surface-variant">
+                      Shablonlar — tasodifiy biri tanlanadi.{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> o'zgaruvchilarini ishlatishingiz mumkin.
+                    </p>
+                    {form.replyTemplates.map((t, i) => (
+                      <div key={i} className="flex gap-2">
+                        <textarea
+                          value={t}
+                          onChange={e => {
+                            const arr = [...form.replyTemplates];
+                            arr[i] = e.target.value;
+                            up({ replyTemplates: arr });
+                          }}
+                          rows={2}
+                          placeholder={`Javob ${i + 1}...`}
+                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                        />
+                        {form.replyTemplates.length > 1 && (
+                          <button onClick={() => up({ replyTemplates: form.replyTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button onClick={() => up({ replyTemplates: [...form.replyTemplates, ''] })} className="text-xs text-primary hover:underline">
+                      + Shablon qo'shish
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* DM */}
+              <div className={`rounded-xl border transition-all ${form.dmEnabled ? 'border-primary/50' : 'border-outline-variant/30'}`}>
+                <button
+                  onClick={() => up({ dmEnabled: !form.dmEnabled })}
+                  className="w-full flex items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Send size={16} className={form.dmEnabled ? 'text-primary' : 'text-on-surface-variant'} />
+                    <span className="font-medium text-sm text-on-surface">DM yuborish</span>
+                  </div>
+                  <span style={{
+                    width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                    border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                    backgroundColor: form.dmEnabled ? '#3B82F6' : '#E5E7EB',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                    transition: 'background-color 0.25s ease',
+                  }}>
+                    <span style={{
+                      display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      transform: form.dmEnabled ? 'translateX(16px)' : 'translateX(0px)',
+                      transition: 'transform 0.25s ease',
+                    }} />
+                  </span>
+                </button>
+                {form.dmEnabled && (
+                  <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
+                    <p className="text-xs text-on-surface-variant">
+                      DM shablonlari — tasodifiy biri tanlanadi.{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> ishlatishingiz mumkin.
+                    </p>
+                    {form.dmTemplates.map((t, i) => (
+                      <div key={i} className="flex gap-2">
+                        <textarea
+                          value={t}
+                          onChange={e => {
+                            const arr = [...form.dmTemplates];
+                            arr[i] = e.target.value;
+                            up({ dmTemplates: arr });
+                          }}
+                          rows={2}
+                          placeholder={`DM ${i + 1}...`}
+                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                        />
+                        {form.dmTemplates.length > 1 && (
+                          <button onClick={() => up({ dmTemplates: form.dmTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button onClick={() => up({ dmTemplates: [...form.dmTemplates, ''] })} className="text-xs text-primary hover:underline">
+                      + Shablon qo'shish
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Postlar */}
+          <Card title="Postlar" desc="Bu avtomatizatsiya qaysi postlarda ishlaydi?">
+            <div className="space-y-2 mb-3">
+              {[
+                { val: 'all', label: 'Barcha postlar', desc: 'Hozirgi va kelajakdagi barcha postlar', Icon: Globe },
+                { val: 'specific', label: 'Tanlangan postlar', desc: "Faqat o'zingiz belgilagan postlar", Icon: Hash },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => up({ postScope: opt.val as any, postIds: [], postData: [] })}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all flex items-center gap-3 ${
+                    form.postScope === opt.val
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant/30 hover:border-outline-variant'
+                  }`}
+                >
+                  <opt.Icon size={16} className={form.postScope === opt.val ? 'text-primary' : 'text-on-surface-variant'} />
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-sm text-on-surface">{opt.label}</div>
+                    <div className="text-xs text-on-surface-variant mt-0.5">{opt.desc}</div>
+                  </div>
+                  {form.postScope === opt.val && opt.val === 'specific' && form.postIds.length > 0 && (
+                    <span className="text-xs text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full">
+                      {form.postIds.length} ta
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {form.postScope === 'specific' && (
+              <div className="mt-2">
+                {postsLoading ? (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="aspect-square rounded-lg bg-surface-variant animate-pulse" />
+                    ))}
+                  </div>
+                ) : posts.length === 0 ? (
+                  <div className="text-center py-6 text-on-surface-variant text-sm">
+                    <MessageSquare size={24} className="mx-auto mb-2 opacity-40" />
+                    Postlar topilmadi
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-on-surface-variant mb-2">Postni bosib tanlang:</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {posts.map((post: any) => {
+                        const selected = form.postIds.includes(post.id);
+                        const thumb = post.thumbnail_url || post.media_url;
+                        return (
+                          <button
+                            key={post.id}
+                            onClick={() => togglePost(post)}
+                            className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all ${
+                              selected ? 'border-primary shadow-md' : 'border-transparent opacity-70 hover:opacity-100 hover:border-outline-variant/40'
+                            }`}
+                          >
+                            {thumb ? (
+                              <img src={thumb} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-surface-variant flex items-center justify-center">
+                                <MessageSquare size={14} className="text-on-surface-variant" />
+                              </div>
+                            )}
+                            {selected && (
+                              <div className="absolute inset-0 bg-primary/25 flex items-center justify-center">
+                                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                  <CheckCircle size={14} className="text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* Save button */}
+          <div className="pb-8">
+            <button
+              onClick={save}
+              disabled={!canSave || saving}
+              className="w-full py-3.5 rounded-2xl font-medium text-white text-sm hover:opacity-90 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+            >
+              <Save size={16} />
+              {saving ? 'Saqlanmoqda...' : 'Avtomatizatsiyani saqlash'}
+            </button>
+            {!form.name.trim() && (
+              <p className="text-xs text-on-surface-variant text-center mt-2">Nom kiriting</p>
+            )}
+            {form.name.trim() && !form.replyEnabled && !form.dmEnabled && (
+              <p className="text-xs text-on-surface-variant text-center mt-2">Kamida bitta amal tanlang</p>
+            )}
           </div>
         </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-5xl">
-          {cards.map(({ href, icon: Icon, label, description, iconBg, hoverBorder, arrowHover }) => (
-            <Link key={href} href={href}
-              className={`bg-white rounded-xl p-6 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-transparent ${hoverBorder} hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col`}>
-              <div className="flex justify-between items-start mb-6">
-                <div className={`w-12 h-12 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform ${iconBg}`}>
-                  <Icon size={22} strokeWidth={2} />
-                </div>
-                <ArrowRight size={20} className={`text-slate-300 transition-all duration-200 group-hover:translate-x-1 ${arrowHover}`} />
-              </div>
-              <div className="flex-1 flex flex-col">
-                <h3 className="text-[16px] font-semibold text-on-surface mb-2 leading-6">{label}</h3>
-                <p className="text-[14px] text-on-surface-variant leading-[22px] mt-auto">{description}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
+        </div>{/* /overflow-y-auto */}
       </div>
+    );
+  }
+
+  // ─── LIST VIEW ────────────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-8">
+        <div className="container mx-auto max-w-5xl">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-2xl font-bold text-on-surface">Izoh avtomatizatsiyalari</h1>
+              <p className="text-on-surface-variant text-sm mt-1">
+                Postlaringizga kelgan izohlarga avtomatik javob bering
+              </p>
+            </div>
+            <button
+              onClick={openCreate}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white hover:opacity-90 transition-all"
+              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+            >
+              <Plus size={16} />
+              Yangi avtomatizatsiya
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-20 rounded-2xl bg-surface-variant animate-pulse" />
+              ))}
+            </div>
+          ) : automations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                <Zap size={28} className="text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-on-surface mb-2">Hali avtomatizatsiya yo'q</h3>
+              <p className="text-on-surface-variant text-sm mb-6 max-w-xs">
+                Birinchi avtomatizatsiyangizni yarating va izohlarga avtomatik javob bering
+              </p>
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
+                style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+              >
+                <Plus size={16} /> Avtomatizatsiya yaratish
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {automations.map(auto => (
+                <div
+                  key={auto.id}
+                  className="group bg-surface border border-outline-variant/30 rounded-2xl p-4 flex items-center gap-4 hover:border-primary/30 transition-all cursor-pointer"
+                  onClick={() => router.push(`/automation/comments/${auto.id}`)}
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={auto.isActive ? { background: 'linear-gradient(135deg, #4648d4, #8127cf)' } : {}}
+                  >
+                    <Zap size={18} className={auto.isActive ? 'text-white' : 'text-on-surface-variant'} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-on-surface truncate">{auto.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                        auto.isActive
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-surface-variant text-on-surface-variant'
+                      }`}>
+                        {auto.isActive ? 'Faol' : 'Nofaol'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {auto.replyEnabled && (
+                        <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                          <MessageSquare size={11} /> Izoh javob
+                        </span>
+                      )}
+                      {auto.dmEnabled && (
+                        <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                          <Send size={11} /> DM
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                        {auto.postScope === 'all' ? <Globe size={11} /> : <Hash size={11} />}
+                        {auto.postScope === 'all' ? 'Barcha postlar' : `${auto.postIds.length} ta post`}
+                      </span>
+                      {auto.triggerType === 'keyword' && auto.keywords.length > 0 && (
+                        <span className="text-xs text-on-surface-variant">
+                          · {auto.keywords.slice(0, 2).join(', ')}{auto.keywords.length > 2 ? ` +${auto.keywords.length - 2}` : ''}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={e => handleToggle(auto.id, e)}
+                      role="switch"
+                      aria-checked={auto.isActive}
+                      style={{
+                        width: '36px',
+                        height: '20px',
+                        borderRadius: '10px',
+                        padding: '2px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.25s ease',
+                        backgroundColor: auto.isActive ? '#3B82F6' : '#E5E7EB',
+                        boxShadow: auto.isActive
+                          ? 'inset 0 1px 3px rgba(0,0,0,0.15)'
+                          : 'inset 0 1px 3px rgba(0,0,0,0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                        outline: 'none',
+                      }}
+                    >
+                      <span style={{
+                        display: 'block',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        backgroundColor: '#ffffff',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                        transform: auto.isActive ? 'translateX(16px)' : 'translateX(0px)',
+                        transition: 'transform 0.25s ease',
+                        flexShrink: 0,
+                      }} />
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); setDeleteId(auto.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-on-surface-variant hover:text-error transition-all p-1"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <ChevronRight size={16} className="text-on-surface-variant flex-shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>{/* /overflow-y-auto */}
+
+      {/* Delete confirm */}
+      {deleteId !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="font-semibold text-on-surface mb-2">O'chirishni tasdiqlang</h3>
+            <p className="text-sm text-on-surface-variant mb-5">Bu avtomatizatsiya butunlay o'chiriladi.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-surface-variant">
+                Bekor qilish
+              </button>
+              <button onClick={() => handleDelete(deleteId!)} className="px-4 py-2 rounded-xl text-sm font-medium bg-error text-on-error">
+                O'chirish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Card({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-surface border border-outline-variant/30 rounded-2xl overflow-hidden">
+      <div className="px-4 py-3 border-b border-outline-variant/20">
+        <h2 className="text-sm font-semibold text-on-surface">{title}</h2>
+        {desc && <p className="text-xs text-on-surface-variant mt-0.5">{desc}</p>}
+      </div>
+      <div className="p-4">{children}</div>
     </div>
   );
 }

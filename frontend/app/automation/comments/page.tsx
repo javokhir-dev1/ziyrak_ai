@@ -1,398 +1,614 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Plus, Trash2, Edit2, RefreshCw, ChevronDown, ChevronUp,
-  MessageSquare, Mail, Tag, X, Check, ToggleLeft, ToggleRight,
-  AlertCircle, Shuffle, ArrowLeft,
+  Plus, Zap, MessageSquare, Send, ToggleLeft, ToggleRight,
+  Trash2, ChevronRight, Globe, Hash, CheckCircle, ArrowLeft, Save,
 } from 'lucide-react';
-import Toggle from '@/components/Toggle';
-import Alert from '@/components/Alert';
 import {
-  getCommentRules, createCommentRule, updateCommentRule,
-  deleteCommentRule, toggleCommentRule, getInstagramPosts,
+  getAutomations, createAutomation, updateAutomation,
+  toggleAutomation, deleteAutomation, getInstagramPosts,
 } from '@/lib/api';
 
-interface Post {
-  id: string; caption?: string; media_type: string;
-  media_url?: string; thumbnail_url?: string;
-  timestamp: string; comments_count?: number; like_count?: number;
+interface Automation {
+  id: number;
+  name: string;
+  triggerType: 'any' | 'keyword';
+  keywords: string[];
+  replyEnabled: boolean;
+  replyTemplates: string[];
+  dmEnabled: boolean;
+  dmTemplates: string[];
+  postScope: 'all' | 'specific';
+  postIds: string[];
+  postData: { id: string; caption?: string; thumbnail?: string }[];
+  isActive: boolean;
+  createdAt: string;
 }
 
-interface CommentRule {
-  id: number; postId: string; postCaption?: string; postThumbnail?: string;
-  isActive: boolean; replyEnabled: boolean; replyTemplates: string[];
-  keywordsEnabled: boolean; keywords: string[]; dmEnabled: boolean;
-  dmTemplates: string[]; createdAt: string;
+interface FormState {
+  name: string;
+  triggerType: 'any' | 'keyword';
+  keywords: string[];
+  replyEnabled: boolean;
+  replyTemplates: string[];
+  dmEnabled: boolean;
+  dmTemplates: string[];
+  postScope: 'all' | 'specific';
+  postIds: string[];
+  postData: { id: string; caption?: string; thumbnail?: string }[];
 }
 
-const defaultForm = {
-  replyEnabled: true, replyTemplates: [] as string[],
-  keywordsEnabled: false, keywords: [] as string[],
-  dmEnabled: false, dmTemplates: [] as string[],
+const EMPTY_FORM: FormState = {
+  name: '',
+  triggerType: 'any',
+  keywords: [],
+  replyEnabled: false,
+  replyTemplates: [''],
+  dmEnabled: false,
+  dmTemplates: [''],
+  postScope: 'all',
+  postIds: [],
+  postData: [],
 };
 
-function TemplateList({ label, placeholder, templates, onChange }: {
-  label: string; placeholder: string; templates: string[]; onChange: (v: string[]) => void;
-}) {
-  const [draft, setDraft] = useState('');
-  const add = () => {
-    const t = draft.trim();
-    if (!t || templates.includes(t)) { setDraft(''); return; }
-    onChange([...templates, t]); setDraft('');
-  };
-  const update = (i: number, val: string) => {
-    if (templates.some((t, idx) => idx !== i && t === val.trim())) return;
-    const next = [...templates]; next[i] = val; onChange(next);
-  };
-  const remove = (i: number) => onChange(templates.filter((_, idx) => idx !== i));
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-xs font-semibold text-gray-600">{label}</label>
-        {templates.length > 1 && <span className="flex items-center gap-1 text-xs text-gray-400"><Shuffle size={11} /> Random tanlanadi</span>}
-      </div>
-      {templates.length < 3 && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-          <AlertCircle size={13} className="flex-shrink-0" />
-          {templates.length === 0 ? "Kamida 3 ta variant qo'shing" : `Yana ${3 - templates.length} ta variant qo'shing`}
-        </div>
-      )}
-      {templates.map((t, i) => (
-        <div key={i} className="flex gap-2 items-start">
-          <div className="flex-shrink-0 w-5 h-5 mt-2.5 rounded-full bg-accent-light flex items-center justify-center text-xs font-semibold text-accent-dark">{i + 1}</div>
-          <textarea rows={2} value={t} onChange={e => update(i, e.target.value)}
-            className="flex-1 px-3 py-2 border-[1.5px] border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:border-accent bg-gray-50 focus:bg-white resize-none transition-colors" />
-          <button onClick={() => remove(i)} className="mt-2 p-1.5 text-gray-300 hover:text-red-400 hover:bg-red-50 rounded-lg transition-colors"><X size={14} /></button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        <textarea rows={2} value={draft} onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); add(); } }}
-          placeholder={placeholder}
-          className="flex-1 px-3 py-2 border-[1.5px] border-dashed border-gray-200 rounded-xl text-sm text-gray-500 focus:outline-none focus:border-accent bg-gray-50 focus:bg-white resize-none transition-colors" />
-        <button onClick={add} disabled={!draft.trim()} className="px-3 py-2 bg-accent text-white rounded-xl hover:bg-accent-dark transition-colors disabled:opacity-40 self-start mt-0.5"><Plus size={15} /></button>
-      </div>
-      <p className="text-xs text-gray-400">
-        <code className="bg-accent-light text-accent-dark px-1.5 py-0.5 rounded">{'{name}'}</code> — ism &nbsp;|&nbsp;
-        <code className="bg-accent-light text-accent-dark px-1.5 py-0.5 rounded">{'{comment}'}</code> — komment &nbsp;|&nbsp; Ctrl+Enter — qo'shish
-      </p>
-    </div>
-  );
-}
-
-export default function CommentsFullPage() {
+export default function AutomationCommentsPage() {
   const router = useRouter();
-  const [rules, setRules] = useState<CommentRule[]>([]);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [step, setStep] = useState<'list' | 'select-post' | 'edit-rule'>('list');
-  const [loadingRules, setLoadingRules] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(false);
-  const [alert, setAlert] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ ...defaultForm });
-  const [keywordInput, setKeywordInput] = useState('');
+  const [automations, setAutomations] = useState<Automation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'list' | 'create'>('list');
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [kwInput, setKwInput] = useState('');
+  const [posts, setPosts] = useState<any[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  useEffect(() => { loadRules(); }, []);
-
-  const loadRules = async () => {
-    setLoadingRules(true);
-    try { const d = await getCommentRules(); setRules(d.rules || []); }
-    finally { setLoadingRules(false); }
+  const load = async () => {
+    try { setAutomations(await getAutomations()); }
+    finally { setLoading(false); }
   };
+
+  useEffect(() => { load(); }, []);
 
   const loadPosts = async () => {
-    setLoadingPosts(true);
-    try { const d = await getInstagramPosts(); setPosts(d.posts || []); }
-    catch { showAlert('error', 'Postlarni yuklashda xato'); }
-    finally { setLoadingPosts(false); }
+    setPostsLoading(true);
+    try {
+      const res = await getInstagramPosts();
+      // backend { success, posts: [...] } qaytaradi
+      setPosts(res?.posts || res?.data || []);
+    } catch { setPosts([]); }
+    finally { setPostsLoading(false); }
   };
 
-  const showAlert = (type: 'success' | 'error', msg: string) => {
-    setAlert({ type, msg }); setTimeout(() => setAlert(null), 3500);
+  const openCreate = () => {
+    setForm(EMPTY_FORM);
+    setKwInput('');
+    setView('create');
+    loadPosts();
   };
 
-  const openNew = () => {
-    setSelectedPost(null); setEditingId(null); setForm({ ...defaultForm }); setKeywordInput('');
-    setStep('select-post'); loadPosts();
+  const up = (patch: Partial<FormState>) => setForm(f => ({ ...f, ...patch }));
+
+  const addKw = () => {
+    const kw = kwInput.trim();
+    if (kw && !form.keywords.includes(kw)) up({ keywords: [...form.keywords, kw] });
+    setKwInput('');
   };
 
-  const openEdit = (rule: CommentRule) => {
-    setEditingId(rule.id);
-    setSelectedPost({ id: rule.postId, caption: rule.postCaption, thumbnail_url: rule.postThumbnail, media_type: 'IMAGE', timestamp: rule.createdAt });
-    setForm({
-      replyEnabled: rule.replyEnabled, replyTemplates: rule.replyTemplates?.filter(Boolean) || [],
-      keywordsEnabled: rule.keywordsEnabled, keywords: rule.keywords?.filter(Boolean) || [],
-      dmEnabled: rule.dmEnabled, dmTemplates: rule.dmTemplates?.filter(Boolean) || [],
-    });
-    setKeywordInput(''); setStep('edit-rule');
-  };
-
-  const selectPostForNew = (post: Post) => {
-    if (rules.find(r => r.postId === post.id)) { showAlert('error', 'Bu post uchun qoida allaqachon mavjud'); return; }
-    setSelectedPost(post); setForm({ ...defaultForm }); setStep('edit-rule');
+  const togglePost = (post: any) => {
+    const id = post.id;
+    if (form.postIds.includes(id)) {
+      up({ postIds: form.postIds.filter(p => p !== id), postData: form.postData.filter(p => p.id !== id) });
+    } else {
+      up({
+        postIds: [...form.postIds, id],
+        postData: [...form.postData, {
+          id,
+          caption: post.caption?.substring(0, 80),
+          thumbnail: post.thumbnail_url || post.media_url,
+        }],
+      });
+    }
   };
 
   const save = async () => {
-    if (!selectedPost) return;
-    if (form.replyEnabled && form.replyTemplates.filter(Boolean).length < 3) return showAlert('error', 'Kamida 3 ta komment javob varianti kerak');
-    if (form.dmEnabled && form.dmTemplates.filter(Boolean).length < 3) return showAlert('error', 'Kamida 3 ta DM varianti kerak');
+    if (!form.name.trim()) return;
+    if (!form.replyEnabled && !form.dmEnabled) return;
     setSaving(true);
     try {
-      const payload = { ...form, replyTemplates: form.replyTemplates.filter(Boolean), dmTemplates: form.dmTemplates.filter(Boolean), keywords: form.keywords.filter(Boolean) };
-      if (editingId) { await updateCommentRule(editingId, payload); showAlert('success', 'Qoida yangilandi'); }
-      else { await createCommentRule({ postId: selectedPost.id, postCaption: selectedPost.caption, postThumbnail: selectedPost.thumbnail_url || (selectedPost as any).media_url, ...payload }); showAlert('success', "Yangi qoida qo'shildi"); }
-      await loadRules(); setStep('list');
-    } catch { showAlert('error', 'Saqlashda xato'); }
-    finally { setSaving(false); }
+      await createAutomation({ ...form, isActive: true });
+      setView('list');
+      load();
+    } finally { setSaving(false); }
   };
 
-  const deleteRule = async (id: number) => {
-    if (!confirm("Bu qoidani o'chirmoqchimisiz?")) return;
-    try { await deleteCommentRule(id); setRules(r => r.filter(x => x.id !== id)); showAlert('success', "Qoida o'chirildi"); }
-    catch { showAlert('error', "O'chirishda xato"); }
+  const handleToggle = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await toggleAutomation(id);
+    load();
   };
 
-  const toggle = async (id: number) => {
-    try { const d = await toggleCommentRule(id); setRules(r => r.map(x => x.id === id ? d.rule : x)); }
-    catch { showAlert('error', 'Xato'); }
+  const handleDelete = async (id: number) => {
+    await deleteAutomation(id);
+    setDeleteId(null);
+    load();
   };
 
-  const addKeyword = () => {
-    const kw = keywordInput.trim();
-    if (kw && !form.keywords.includes(kw)) setForm(f => ({ ...f, keywords: [...f.keywords, kw] }));
-    setKeywordInput('');
-  };
-
-  const truncate = (text?: string, n = 70) => !text ? "Caption yo'q" : text.length > n ? text.slice(0, n) + '...' : text;
-  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short' });
-
-  const headerTitle = step === 'list' ? 'Post avto javob' : step === 'select-post' ? 'Post tanlash' : editingId ? 'Qoidani tahrirlash' : 'Yangi qoida';
-  const headerSub = step === 'list' ? 'Har bir post uchun alohida sozlamalar' : step === 'select-post' ? 'Qoida qo\'shmoqchi bo\'lgan postni tanlang' : selectedPost ? truncate(selectedPost.caption, 50) : '';
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <header className="bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 px-8 py-5 flex items-center gap-4 sticky top-0 z-10">
-        <button onClick={() => step !== 'list' ? setStep(step === 'edit-rule' && !editingId ? 'select-post' : 'list') : router.push('/automation')}
-          className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors flex-shrink-0">
-          <ArrowLeft size={20} />
-        </button>
-        <div>
-          <h2 className="text-[20px] font-semibold text-slate-900 leading-tight">{headerTitle}</h2>
-          {headerSub && <p className="text-[13px] text-slate-400 truncate max-w-md">{headerSub}</p>}
-        </div>
-        {step === 'list' && (
-          <div className="ml-auto">
-            <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent-dark transition-colors">
-              <Plus size={15} /> Yangi qo'shish
+  // ─── CREATE VIEW ─────────────────────────────────────────────────────────
+  if (view === 'create') {
+    const canSave = form.name.trim() && (form.replyEnabled || form.dmEnabled);
+    return (
+      <div className="h-full flex flex-col bg-background text-on-surface overflow-hidden">
+        {/* Sticky header */}
+        <div className="flex-shrink-0 bg-background/95 backdrop-blur border-b border-outline-variant/30 px-6 py-3 flex items-center justify-between z-10">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView('list')} className="text-on-surface-variant hover:text-on-surface transition-colors p-1">
+              <ArrowLeft size={20} />
             </button>
+            <span className="font-semibold text-on-surface">Yangi avtomatizatsiya</span>
           </div>
-        )}
-        {step === 'select-post' && (
-          <button onClick={loadPosts} disabled={loadingPosts} className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-500">
-            <RefreshCw size={12} className={loadingPosts ? 'animate-spin' : ''} /> Yangilash
+          <button
+            onClick={save}
+            disabled={!canSave || saving}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
+            style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+          >
+            <Save size={14} />
+            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
           </button>
-        )}
-        {step === 'edit-rule' && (
-          <button onClick={save} disabled={saving} className="ml-auto flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent-dark transition-colors disabled:opacity-60">
-            <Check size={15} /> {saving ? 'Saqlanmoqda...' : editingId ? 'Yangilash' : 'Saqlash'}
-          </button>
-        )}
-      </header>
+        </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl mx-auto">
-          {alert && <div className="mb-4"><Alert type={alert.type} message={alert.msg} /></div>}
+        <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto p-6 space-y-4">
+          {/* Nom */}
+          <Card title="Avtomatizatsiya nomi">
+            <input
+              autoFocus
+              type="text"
+              value={form.name}
+              onChange={e => up({ name: e.target.value })}
+              placeholder='Masalan: "Yangi post izohlari"'
+              className="w-full px-4 py-3 rounded-xl bg-surface-variant text-on-surface placeholder:text-on-surface-variant/50 outline-none focus:ring-2 ring-primary/40 text-sm"
+            />
+          </Card>
 
-          {/* LIST */}
-          {step === 'list' && (
-            loadingRules ? (
-              <div className="text-center py-20 text-sm text-gray-400">Yuklanmoqda...</div>
-            ) : rules.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
-                <MessageSquare size={36} className="text-gray-200 mx-auto mb-3" />
-                <div className="text-sm font-semibold text-gray-500 mb-1">Qoidalar yo'q</div>
-                <div className="text-xs text-gray-400 mb-4">Har bir post uchun alohida qoida qo'shing</div>
-                <button onClick={openNew} className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-xl hover:bg-accent-dark transition-colors">
-                  <Plus size={14} /> Yangi qo'shish
+          {/* Trigger */}
+          <Card title="Trigger turi" desc="Qachon ishga tushsin?">
+            <div className="space-y-2">
+              {[
+                { val: 'any', label: 'Har qanday izohda', desc: 'Barcha izohlarga javob beradi' },
+                { val: 'keyword', label: "Kalit so'z bo'lganda", desc: "Faqat belgilangan so'zlarni o'z ichiga olgan izohlarda" },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => up({ triggerType: opt.val as any })}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${
+                    form.triggerType === opt.val
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant/30 hover:border-outline-variant'
+                  }`}
+                >
+                  <div className="font-medium text-sm text-on-surface">{opt.label}</div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">{opt.desc}</div>
                 </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {rules.map(rule => {
-                  const expanded = expandedId === rule.id;
-                  const replyCount = rule.replyTemplates?.filter(Boolean).length || 0;
-                  const dmCount = rule.dmTemplates?.filter(Boolean).length || 0;
-                  return (
-                    <div key={rule.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                      <div className="flex items-center gap-3 p-4">
-                        <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                          {rule.postThumbnail ? <img src={rule.postThumbnail} alt="" className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center"><MessageSquare size={16} className="text-gray-300" /></div>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-gray-700 truncate">{truncate(rule.postCaption)}</div>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {rule.replyEnabled && replyCount > 0 && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{replyCount} javob</span>}
-                            {rule.replyEnabled && replyCount === 0 && <span className="text-xs bg-red-50 text-red-500 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle size={10} /> Variant yo'q</span>}
-                            {rule.keywordsEnabled && <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">Kalit so'z</span>}
-                            {rule.dmEnabled && dmCount > 0 && <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full">{dmCount} DM</span>}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => toggle(rule.id)} className={`p-1.5 rounded-lg transition-colors ${rule.isActive ? 'text-accent hover:bg-accent-light' : 'text-gray-300 hover:bg-gray-50'}`}>
-                            {rule.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                          </button>
-                          <button onClick={() => openEdit(rule)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors"><Edit2 size={15} /></button>
-                          <button onClick={() => deleteRule(rule.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={15} /></button>
-                          <button onClick={() => setExpandedId(expanded ? null : rule.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 transition-colors">
-                            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                          </button>
-                        </div>
-                      </div>
-                      {expanded && (
-                        <div className="border-t border-gray-50 px-4 pb-4 pt-3 space-y-3 text-sm">
-                          {replyCount > 0 && (
-                            <div>
-                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Komment javob variantlari ({replyCount})</span>
-                              <div className="mt-1.5 space-y-1.5">
-                                {rule.replyTemplates.filter(Boolean).map((t, i) => (
-                                  <div key={i} className="flex items-start gap-2">
-                                    <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                                    <p className="text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-1.5 flex-1">{t}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {rule.keywordsEnabled && rule.keywords?.filter(Boolean).length > 0 && (
-                            <div>
-                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Kalit so'zlar</span>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {rule.keywords.filter(Boolean).map(kw => <span key={kw} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">{kw}</span>)}
-                              </div>
-                            </div>
-                          )}
-                          {rule.dmEnabled && dmCount > 0 && (
-                            <div>
-                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">DM variantlari ({dmCount})</span>
-                              <div className="mt-1.5 space-y-1.5">
-                                {rule.dmTemplates.filter(Boolean).map((t, i) => (
-                                  <div key={i} className="flex items-start gap-2">
-                                    <span className="w-4 h-4 rounded-full bg-green-100 text-green-600 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                                    <p className="text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-1.5 flex-1">{t}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          )}
-
-          {/* SELECT POST */}
-          {step === 'select-post' && (
-            loadingPosts ? (
-              <div className="text-center py-20 text-sm text-gray-400">Postlar yuklanmoqda...</div>
-            ) : posts.length === 0 ? (
-              <div className="text-center py-20 text-sm text-gray-400">Postlar topilmadi</div>
-            ) : (
-              <div className="space-y-2">
-                {posts.map(post => {
-                  const thumb = post.thumbnail_url || post.media_url;
-                  const alreadyUsed = rules.some(r => r.postId === post.id);
-                  return (
-                    <button key={post.id} onClick={() => !alreadyUsed && selectPostForNew(post)} disabled={alreadyUsed}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-[1.5px] transition-all text-left ${
-                        alreadyUsed ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed' : 'border-gray-100 bg-white hover:border-accent hover:bg-accent-light/20'
-                      }`}>
-                      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200">
-                        {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><MessageSquare size={16} className="text-gray-400" /></div>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-gray-700 truncate">{truncate(post.caption)}</div>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                          <span>{formatDate(post.timestamp)}</span>
-                          <span>{post.comments_count ?? 0} komment</span>
-                          <span>{post.like_count ?? 0} like</span>
-                        </div>
-                      </div>
-                      {alreadyUsed && <span className="text-xs text-gray-400 flex-shrink-0">Qoida bor</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )
-          )}
-
-          {/* EDIT RULE */}
-          {step === 'edit-rule' && (
-            <div className="space-y-5 max-w-2xl">
-              {selectedPost && (
-                <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                    {(selectedPost.thumbnail_url || (selectedPost as any).media_url)
-                      ? <img src={selectedPost.thumbnail_url || (selectedPost as any).media_url} alt="" className="w-full h-full object-cover" />
-                      : <div className="w-full h-full flex items-center justify-center"><MessageSquare size={16} className="text-gray-300" /></div>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-gray-500 mb-0.5">Tanlangan post</div>
-                    <div className="text-sm text-gray-700 truncate">{truncate(selectedPost.caption)}</div>
-                  </div>
+              ))}
+            </div>
+            {form.triggerType === 'keyword' && (
+              <div className="mt-3">
+                <div className="flex gap-2 mb-2">
+                  <input
+                    value={kwInput}
+                    onChange={e => setKwInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addKw()}
+                    placeholder="Kalit so'z kiriting, Enter bosing..."
+                    className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-sm outline-none focus:ring-2 ring-primary/40"
+                  />
+                  <button onClick={addKw} className="px-3 py-2 rounded-lg bg-primary text-on-primary text-sm font-medium whitespace-nowrap">
+                    Qo'sh
+                  </button>
                 </div>
-              )}
-
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
-                <div className="flex items-center gap-2"><MessageSquare size={16} className="text-gray-400" /><span className="text-sm font-semibold text-gray-800">Kommentga javob</span></div>
-                <Toggle checked={form.replyEnabled} onChange={v => setForm(f => ({ ...f, replyEnabled: v }))} label="Kommentga avtomatik javob berish" />
-                {form.replyEnabled && <TemplateList label="Javob variantlari" placeholder="Variant yozing... (Ctrl+Enter)" templates={form.replyTemplates} onChange={v => setForm(f => ({ ...f, replyTemplates: v }))} />}
+                {form.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {form.keywords.map(kw => (
+                      <span key={kw} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs">
+                        {kw}
+                        <button onClick={() => up({ keywords: form.keywords.filter(k => k !== kw) })} className="hover:text-error leading-none">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
+            )}
+          </Card>
 
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
-                <div className="flex items-center gap-2"><Tag size={16} className="text-gray-400" /><span className="text-sm font-semibold text-gray-800">Kalit so'z filtri</span></div>
-                <Toggle checked={form.keywordsEnabled} onChange={v => setForm(f => ({ ...f, keywordsEnabled: v }))} label="Faqat kalit so'zli kommentlarga javob berish" />
-                {form.keywordsEnabled && (
-                  <div>
-                    <div className="flex gap-2 mb-3">
-                      <input type="text" value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
-                        placeholder="Kalit so'z kiriting va Enter bosing"
-                        className="flex-1 px-3 py-2 border-[1.5px] border-gray-200 rounded-xl text-sm focus:outline-none focus:border-accent bg-gray-50 focus:bg-white transition-colors" />
-                      <button onClick={addKeyword} className="px-4 py-2 bg-accent text-white text-sm rounded-xl hover:bg-accent-dark transition-colors"><Plus size={15} /></button>
-                    </div>
-                    {form.keywords.filter(Boolean).length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {form.keywords.filter(Boolean).map(kw => (
-                          <span key={kw} className="flex items-center gap-1 text-xs bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full">
-                            {kw} <button onClick={() => setForm(f => ({ ...f, keywords: f.keywords.filter(k => k !== kw) }))} className="hover:text-red-500"><X size={11} /></button>
-                          </span>
-                        ))}
+          {/* Amallar */}
+          <Card title="Amallar" desc="Trigger ishga tushganda nima qilsin? Kamida bittasini tanlang.">
+            <div className="space-y-3">
+              {/* Izohga javob */}
+              <div className={`rounded-xl border transition-all ${form.replyEnabled ? 'border-primary/50' : 'border-outline-variant/30'}`}>
+                <button
+                  onClick={() => up({ replyEnabled: !form.replyEnabled })}
+                  className="w-full flex items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <MessageSquare size={16} className={form.replyEnabled ? 'text-primary' : 'text-on-surface-variant'} />
+                    <span className="font-medium text-sm text-on-surface">Izohga javob berish</span>
+                  </div>
+                  <span style={{
+                    width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                    border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                    backgroundColor: form.replyEnabled ? '#3B82F6' : '#E5E7EB',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                    transition: 'background-color 0.25s ease',
+                  }}>
+                    <span style={{
+                      display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      transform: form.replyEnabled ? 'translateX(16px)' : 'translateX(0px)',
+                      transition: 'transform 0.25s ease',
+                    }} />
+                  </span>
+                </button>
+                {form.replyEnabled && (
+                  <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
+                    <p className="text-xs text-on-surface-variant">
+                      Shablonlar — tasodifiy biri tanlanadi.{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> o'zgaruvchilarini ishlatishingiz mumkin.
+                    </p>
+                    {form.replyTemplates.map((t, i) => (
+                      <div key={i} className="flex gap-2">
+                        <textarea
+                          value={t}
+                          onChange={e => {
+                            const arr = [...form.replyTemplates];
+                            arr[i] = e.target.value;
+                            up({ replyTemplates: arr });
+                          }}
+                          rows={2}
+                          placeholder={`Javob ${i + 1}...`}
+                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                        />
+                        {form.replyTemplates.length > 1 && (
+                          <button onClick={() => up({ replyTemplates: form.replyTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
-                    ) : <p className="text-xs text-gray-400">Hali kalit so'z qo'shilmagan</p>}
+                    ))}
+                    <button onClick={() => up({ replyTemplates: [...form.replyTemplates, ''] })} className="text-xs text-primary hover:underline">
+                      + Shablon qo'shish
+                    </button>
                   </div>
                 )}
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
-                <div className="flex items-center gap-2"><Mail size={16} className="text-gray-400" /><span className="text-sm font-semibold text-gray-800">Kommentdan DM yuborish</span></div>
-                <Toggle checked={form.dmEnabled} onChange={v => setForm(f => ({ ...f, dmEnabled: v }))} label="Komment qoldirganlarga DM yuborish" />
-                {form.dmEnabled && <TemplateList label="DM variantlari" placeholder="DM varianti yozing... (Ctrl+Enter)" templates={form.dmTemplates} onChange={v => setForm(f => ({ ...f, dmTemplates: v }))} />}
+              {/* DM */}
+              <div className={`rounded-xl border transition-all ${form.dmEnabled ? 'border-primary/50' : 'border-outline-variant/30'}`}>
+                <button
+                  onClick={() => up({ dmEnabled: !form.dmEnabled })}
+                  className="w-full flex items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Send size={16} className={form.dmEnabled ? 'text-primary' : 'text-on-surface-variant'} />
+                    <span className="font-medium text-sm text-on-surface">DM yuborish</span>
+                  </div>
+                  <span style={{
+                    width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                    border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                    backgroundColor: form.dmEnabled ? '#3B82F6' : '#E5E7EB',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                    transition: 'background-color 0.25s ease',
+                  }}>
+                    <span style={{
+                      display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      transform: form.dmEnabled ? 'translateX(16px)' : 'translateX(0px)',
+                      transition: 'transform 0.25s ease',
+                    }} />
+                  </span>
+                </button>
+                {form.dmEnabled && (
+                  <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
+                    <p className="text-xs text-on-surface-variant">
+                      DM shablonlari — tasodifiy biri tanlanadi.{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> ishlatishingiz mumkin.
+                    </p>
+                    {form.dmTemplates.map((t, i) => (
+                      <div key={i} className="flex gap-2">
+                        <textarea
+                          value={t}
+                          onChange={e => {
+                            const arr = [...form.dmTemplates];
+                            arr[i] = e.target.value;
+                            up({ dmTemplates: arr });
+                          }}
+                          rows={2}
+                          placeholder={`DM ${i + 1}...`}
+                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                        />
+                        {form.dmTemplates.length > 1 && (
+                          <button onClick={() => up({ dmTemplates: form.dmTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button onClick={() => up({ dmTemplates: [...form.dmTemplates, ''] })} className="text-xs text-primary hover:underline">
+                      + Shablon qo'shish
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-          )}
+          </Card>
+
+          {/* Postlar */}
+          <Card title="Postlar" desc="Bu avtomatizatsiya qaysi postlarda ishlaydi?">
+            <div className="space-y-2 mb-3">
+              {[
+                { val: 'all', label: 'Barcha postlar', desc: 'Hozirgi va kelajakdagi barcha postlar', Icon: Globe },
+                { val: 'specific', label: 'Tanlangan postlar', desc: "Faqat o'zingiz belgilagan postlar", Icon: Hash },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => up({ postScope: opt.val as any, postIds: [], postData: [] })}
+                  className={`w-full text-left px-4 py-3 rounded-xl border transition-all flex items-center gap-3 ${
+                    form.postScope === opt.val
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant/30 hover:border-outline-variant'
+                  }`}
+                >
+                  <opt.Icon size={16} className={form.postScope === opt.val ? 'text-primary' : 'text-on-surface-variant'} />
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-sm text-on-surface">{opt.label}</div>
+                    <div className="text-xs text-on-surface-variant mt-0.5">{opt.desc}</div>
+                  </div>
+                  {form.postScope === opt.val && opt.val === 'specific' && form.postIds.length > 0 && (
+                    <span className="text-xs text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-full">
+                      {form.postIds.length} ta
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {form.postScope === 'specific' && (
+              <div className="mt-2">
+                {postsLoading ? (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="aspect-square rounded-lg bg-surface-variant animate-pulse" />
+                    ))}
+                  </div>
+                ) : posts.length === 0 ? (
+                  <div className="text-center py-6 text-on-surface-variant text-sm">
+                    <MessageSquare size={24} className="mx-auto mb-2 opacity-40" />
+                    Postlar topilmadi
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-on-surface-variant mb-2">Postni bosib tanlang:</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {posts.map((post: any) => {
+                        const selected = form.postIds.includes(post.id);
+                        const thumb = post.thumbnail_url || post.media_url;
+                        return (
+                          <button
+                            key={post.id}
+                            onClick={() => togglePost(post)}
+                            className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all ${
+                              selected ? 'border-primary shadow-md' : 'border-transparent opacity-70 hover:opacity-100 hover:border-outline-variant/40'
+                            }`}
+                          >
+                            {thumb ? (
+                              <img src={thumb} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-surface-variant flex items-center justify-center">
+                                <MessageSquare size={14} className="text-on-surface-variant" />
+                              </div>
+                            )}
+                            {selected && (
+                              <div className="absolute inset-0 bg-primary/25 flex items-center justify-center">
+                                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                  <CheckCircle size={14} className="text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* Save button */}
+          <div className="pb-8">
+            <button
+              onClick={save}
+              disabled={!canSave || saving}
+              className="w-full py-3.5 rounded-2xl font-medium text-white text-sm hover:opacity-90 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+            >
+              <Save size={16} />
+              {saving ? 'Saqlanmoqda...' : 'Avtomatizatsiyani saqlash'}
+            </button>
+            {!form.name.trim() && (
+              <p className="text-xs text-on-surface-variant text-center mt-2">Nom kiriting</p>
+            )}
+            {form.name.trim() && !form.replyEnabled && !form.dmEnabled && (
+              <p className="text-xs text-on-surface-variant text-center mt-2">Kamida bitta amal tanlang</p>
+            )}
+          </div>
         </div>
+        </div>{/* /overflow-y-auto */}
       </div>
+    );
+  }
+
+  // ─── LIST VIEW ────────────────────────────────────────────────────────────
+  return (
+    <div className="h-full overflow-y-auto bg-background text-on-surface p-6">
+      <div className="container mx-auto max-w-5xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-on-surface">Izoh avtomatizatsiyalari</h1>
+            <p className="text-on-surface-variant text-sm mt-1">
+              Postlaringizga kelgan izohlarga avtomatik javob bering
+            </p>
+          </div>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white hover:opacity-90 transition-all"
+            style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+          >
+            <Plus size={16} />
+            Yangi avtomatizatsiya
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-20 rounded-2xl bg-surface-variant animate-pulse" />
+            ))}
+          </div>
+        ) : automations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+              <Zap size={28} className="text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold text-on-surface mb-2">Hali avtomatizatsiya yo'q</h3>
+            <p className="text-on-surface-variant text-sm mb-6 max-w-xs">
+              Birinchi avtomatizatsiyangizni yarating va izohlarga avtomatik javob bering
+            </p>
+            <button
+              onClick={openCreate}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
+              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+            >
+              <Plus size={16} /> Avtomatizatsiya yaratish
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {automations.map(auto => (
+              <div
+                key={auto.id}
+                className="group bg-surface border border-outline-variant/30 rounded-2xl p-4 flex items-center gap-4 hover:border-primary/30 transition-all cursor-pointer"
+                onClick={() => router.push(`/automation/comments/${auto.id}`)}
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={auto.isActive ? { background: 'linear-gradient(135deg, #4648d4, #8127cf)' } : {}}
+                >
+                  <Zap size={18} className={auto.isActive ? 'text-white' : 'text-on-surface-variant'} />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-on-surface truncate">{auto.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                      auto.isActive
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-surface-variant text-on-surface-variant'
+                    }`}>
+                      {auto.isActive ? 'Faol' : 'Nofaol'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {auto.replyEnabled && (
+                      <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                        <MessageSquare size={11} /> Izoh javob
+                      </span>
+                    )}
+                    {auto.dmEnabled && (
+                      <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                        <Send size={11} /> DM
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1 text-xs text-on-surface-variant">
+                      {auto.postScope === 'all' ? <Globe size={11} /> : <Hash size={11} />}
+                      {auto.postScope === 'all' ? 'Barcha postlar' : `${auto.postIds.length} ta post`}
+                    </span>
+                    {auto.triggerType === 'keyword' && auto.keywords.length > 0 && (
+                      <span className="text-xs text-on-surface-variant">
+                        · {auto.keywords.slice(0, 2).join(', ')}{auto.keywords.length > 2 ? ` +${auto.keywords.length - 2}` : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={e => handleToggle(auto.id, e)}
+                    role="switch"
+                    aria-checked={auto.isActive}
+                    style={{
+                      width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                      border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                      backgroundColor: auto.isActive ? '#3B82F6' : '#E5E7EB',
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                      transition: 'background-color 0.25s ease',
+                      outline: 'none',
+                    }}
+                  >
+                    <span style={{
+                      display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                      backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      transform: auto.isActive ? 'translateX(16px)' : 'translateX(0px)',
+                      transition: 'transform 0.25s ease',
+                    }} />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setDeleteId(auto.id); }}
+                    className="opacity-0 group-hover:opacity-100 text-on-surface-variant hover:text-error transition-all p-1"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+                <ChevronRight size={16} className="text-on-surface-variant flex-shrink-0" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Delete confirm */}
+      {deleteId !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="font-semibold text-on-surface mb-2">O'chirishni tasdiqlang</h3>
+            <p className="text-sm text-on-surface-variant mb-5">Bu avtomatizatsiya butunlay o'chiriladi.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-surface-variant">
+                Bekor qilish
+              </button>
+              <button onClick={() => handleDelete(deleteId!)} className="px-4 py-2 rounded-xl text-sm font-medium bg-error text-on-error">
+                O'chirish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Card({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-surface border border-outline-variant/30 rounded-2xl overflow-hidden">
+      <div className="px-4 py-3 border-b border-outline-variant/20">
+        <h2 className="text-sm font-semibold text-on-surface">{title}</h2>
+        {desc && <p className="text-xs text-on-surface-variant mt-0.5">{desc}</p>}
+      </div>
+      <div className="p-4">{children}</div>
     </div>
   );
 }

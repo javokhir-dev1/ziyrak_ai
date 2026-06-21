@@ -1,59 +1,62 @@
 import type { Config } from 'tailwindcss';
 
+const v = (name: string) => `rgb(var(--md-${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Legacy (kept for other pages)
-        sidebar: '#ffffff',
-        accent: '#4648d4',
-        'accent-light': '#e1e0ff',
-        'accent-dark': '#2f2ebe',
+        // Legacy aliases
+        sidebar:       v('sidebar'),
+        accent:        v('accent'),
+        'accent-light': v('accent-light'),
+        'accent-dark': v('primary-container'),
 
-        // Brand colors (for new dashboard)
+        // Design system — all via CSS variables
+        primary:                   v('primary'),
+        'primary-container':       v('primary-container'),
+        'primary-fixed':           v('primary-fixed'),
+        'on-primary':              v('on-primary'),
+        'on-primary-container':    v('on-primary-container'),
+        secondary:                 v('secondary'),
+        'secondary-container':     v('secondary-container'),
+        'on-secondary-container':  v('on-secondary-container'),
+        surface:                   v('surface'),
+        'surface-dim':             v('surface-dim'),
+        'surface-bright':          v('surface-bright'),
+        'surface-container-lowest':  v('surface-container-lowest'),
+        'surface-container-low':     v('surface-container-low'),
+        'surface-container':         v('surface-container'),
+        'surface-container-high':    v('surface-container-high'),
+        'surface-container-highest': v('surface-container-highest'),
+        'surface-variant':         v('surface-variant'),
+        'on-surface':              v('on-surface'),
+        'on-surface-variant':      v('on-surface-variant'),
+        background:                v('background'),
+        'on-background':           v('on-background'),
+        outline:                   v('outline'),
+        'outline-variant':         v('outline-variant'),
+        'inverse-surface':         v('inverse-surface'),
+        'inverse-on-surface':      v('inverse-on-surface'),
+        'inverse-primary':         v('inverse-primary'),
+        error:                     v('error'),
+        'error-container':         v('error-container'),
+        'on-error':                v('on-error'),
+        'on-error-container':      v('on-error-container'),
+
+        // Brand colors
         brand: {
-          50: '#f0fdfa',
+          50:  '#f0fdfa',
           100: '#ccfbf1',
           500: '#14b8a6',
           600: '#0d9488',
           900: '#134e4a',
         },
-
-        // Design system
-        primary: '#4648d4',
-        'primary-container': '#6063ee',
-        'primary-fixed': '#e1e0ff',
-        'on-primary': '#ffffff',
-        'on-primary-container': '#fffbff',
-        secondary: '#8127cf',
-        'secondary-container': '#9c48ea',
-        'on-secondary-container': '#fffbff',
-        surface: '#f7f9fb',
-        'surface-dim': '#d8dadc',
-        'surface-bright': '#f7f9fb',
-        'surface-container-lowest': '#ffffff',
-        'surface-container-low': '#f2f4f6',
-        'surface-container': '#eceef0',
-        'surface-container-high': '#e6e8ea',
-        'surface-container-highest': '#e0e3e5',
-        'surface-variant': '#e0e3e5',
-        'on-surface': '#191c1e',
-        'on-surface-variant': '#464554',
-        background: '#f7f9fb',
-        'on-background': '#191c1e',
-        outline: '#767586',
-        'outline-variant': '#c7c4d7',
-        'inverse-surface': '#2d3133',
-        'inverse-on-surface': '#eff1f3',
-        'inverse-primary': '#c0c1ff',
-        error: '#ba1a1a',
-        'error-container': '#ffdad6',
-        'on-error': '#ffffff',
-        'on-error-container': '#93000a',
       },
       fontFamily: {
         sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
