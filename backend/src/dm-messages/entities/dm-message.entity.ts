@@ -5,6 +5,12 @@ export class DmMessage {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ nullable: true })
+  telegram_id: string;
+
+  @Column({ nullable: true })
+  instagram_account_id: string;
+
   @Column({ type: 'text' })
   text: string;
 

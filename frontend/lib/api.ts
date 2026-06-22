@@ -1,18 +1,23 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
-export const api = axios.create({
-  baseURL: API_URL,
+// Barcha so'rovlar same-origin ga (Next.js rewrite orqali backend ga uzatiladi)
+// Bu cookie muammosini hal qiladi — credentials: "include" shart emas
+const api = axios.create({
+  baseURL: typeof window !== 'undefined' ? '' : (process.env.BACKEND_URL || 'http://localhost:4000'),
   headers: { 'Content-Type': 'application/json' },
 });
+
+export { api };
 
 // Settings
 export const getSettings = () => api.get('/api/settings').then(r => r.data);
 export const updateSettings = (data: any) => api.patch('/api/settings', data).then(r => r.data);
 
 // Instagram status
-export const getInstagramStatus = () => api.get('/api/instagram/status').then(r => r.data);
+export const getInstagramStatus   = () => api.get('/api/instagram/status').then(r => r.data);
+export const getInstagramAccounts = () => api.get('/api/instagram/accounts').then(r => r.data) as Promise<{ instagram_account_id: string; instagram_username: string; is_selected: boolean }[]>;
+export const selectInstagramAccount    = (igId: string) => api.post(`/api/instagram/account/${igId}/select`).then(r => r.data);
+export const disconnectInstagramAccount = (igId: string) => api.delete(`/api/instagram/account/${igId}`).then(r => r.data);
 export const getInstagramPosts  = () => api.get('/api/instagram/posts').then(r => r.data);
 
 // DM Messages
@@ -40,8 +45,7 @@ export const streamChatWithAgent = async (
   messages: { role: string; text: string }[],
   onChunk: (text: string) => void,
 ): Promise<void> => {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-  const res = await fetch(`${API_URL}/api/agents/${id}/stream`, {
+  const res = await fetch(`/api/agents/${id}/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
@@ -83,7 +87,6 @@ export const updateCommentRule = (id: number, data: any) => api.patch(`/api/comm
 export const deleteCommentRule = (id: number) => api.delete(`/api/comment-rules/${id}`).then(r => r.data);
 export const toggleCommentRule = (id: number) => api.patch(`/api/comment-rules/${id}/toggle`).then(r => r.data);
 
-// Global (fallback) rule — '__global__' postId ishlatadi
 export const getGlobalRule = () =>
   getCommentRules().then(d => (d.rules || []).find((r: any) => r.postId === '__global__') || null);
 
@@ -92,3 +95,14 @@ export const getAgentMessages = (id: number) => api.get(`/api/agents/${id}/messa
 export const saveAgentMessage = (id: number, role: string, text: string) =>
   api.post(`/api/agents/${id}/messages`, { role, text }).then(r => r.data);
 export const clearAgentMessages = (id: number) => api.delete(`/api/agents/${id}/messages`).then(r => r.data);
+
+// Inbox
+export const getConversations = () => api.get('/api/inbox/conversations').then(r => r.data);
+export const getInboxMessages = (igConversationId: string) =>
+  api.get(`/api/inbox/conversations/${encodeURIComponent(igConversationId)}/messages`).then(r => r.data);
+export const sendInboxMessage = (igsid: string, text: string) =>
+  api.post(`/api/inbox/conversations/${igsid}/send`, { text }).then(r => r.data);
+export const syncInbox = () => api.post('/api/inbox/sync').then(r => r.data);
+export const getInboxUserInfo = (igsid: string) => api.get(`/api/inbox/user/${igsid}`).then(r => r.data);
+export const resetInbox = () => api.post('/api/inbox/reset').then(r => r.data);
+export const getInboxEventsUrl = () => '/api/inbox/events';

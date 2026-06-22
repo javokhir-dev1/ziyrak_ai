@@ -1,20 +1,32 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Req } from '@nestjs/common';
+import { Request } from 'express';
+import { JwtService } from '@nestjs/jwt';
 import { CommentRulesService } from './comment-rules.service';
 import { CreateCommentRuleDto } from './dto/create-comment-rule.dto';
+import { extractTelegramId } from '../auth/extract-telegram-id';
+import { extractActiveIgId } from '../auth/extract-active-ig-id';
+import { InstagramAccountsService } from '../instagram-accounts/instagram-accounts.service';
 
 @Controller('api/comment-rules')
 export class CommentRulesController {
-  constructor(private readonly service: CommentRulesService) {}
+  constructor(
+    private readonly service: CommentRulesService,
+    private readonly jwtService: JwtService,
+    private readonly igAccounts: InstagramAccountsService,
+  ) {}
+
+  private tid(req: Request) { return extractTelegramId(req, this.jwtService); }
+  private igId(req: Request) { return extractActiveIgId(req, this.jwtService, this.igAccounts); }
 
   @Get()
-  async findAll() {
-    const rules = await this.service.findAll();
+  async findAll(@Req() req: Request) {
+    const rules = await this.service.findAll(this.tid(req), await this.igId(req));
     return { success: true, rules };
   }
 
   @Post()
-  async create(@Body() dto: CreateCommentRuleDto) {
-    const rule = await this.service.create(dto);
+  async create(@Req() req: Request, @Body() dto: CreateCommentRuleDto) {
+    const rule = await this.service.create(dto, this.tid(req), await this.igId(req));
     return { success: true, rule };
   }
 

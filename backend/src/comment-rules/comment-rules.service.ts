@@ -11,17 +11,29 @@ export class CommentRulesService {
     private repo: Repository<CommentRule>,
   ) {}
 
-  findAll(): Promise<CommentRule[]> {
-    return this.repo.find({ order: { createdAt: 'DESC' } });
+  findAll(telegram_id: string, instagram_account_id?: string): Promise<CommentRule[]> {
+    const where: any = { telegram_id };
+    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
+    return this.repo.find({ where, order: { createdAt: 'DESC' } });
   }
 
-  findByPostId(postId: string): Promise<CommentRule | null> {
-    return this.repo.findOne({ where: { postId, isActive: true } });
+  findByPostId(postId: string, telegram_id: string, instagram_account_id?: string): Promise<CommentRule | null> {
+    const where: any = { postId, isActive: true, telegram_id };
+    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
+    return this.repo.findOne({ where });
   }
 
-  create(dto: CreateCommentRuleDto): Promise<CommentRule> {
+  findGlobal(telegram_id: string, instagram_account_id?: string): Promise<CommentRule | null> {
+    const where: any = { postId: '__global__', isActive: true, telegram_id };
+    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
+    return this.repo.findOne({ where });
+  }
+
+  create(dto: CreateCommentRuleDto, telegram_id: string, instagram_account_id?: string): Promise<CommentRule> {
     const rule = this.repo.create({
       ...dto,
+      telegram_id,
+      instagram_account_id: instagram_account_id ?? null,
       keywords: dto.keywords || [],
     });
     return this.repo.save(rule);

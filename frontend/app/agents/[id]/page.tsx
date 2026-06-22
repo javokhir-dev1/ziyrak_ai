@@ -4,6 +4,17 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Send, Bot, Trash2, Copy, Check } from 'lucide-react';
 import { getAgent, streamChatWithAgent, getAgentMessages, saveAgentMessage, clearAgentMessages } from '@/lib/api';
 
+function avatarUrl(seed: string) {
+  return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+}
+function AgentAvatar({ value, className = 'w-8 h-8' }: { value: string; className?: string }) {
+  if (value?.startsWith('dicebear:')) {
+    const seed = value.split(':')[2] || 'Felix';
+    return <img src={avatarUrl(seed)} className={className} alt="avatar" />;
+  }
+  return <span className="text-2xl leading-none">{value}</span>;
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -186,8 +197,8 @@ export default function AgentChatPage() {
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-lg overflow-hidden shrink-0">
-            {agent.emoji}
+          <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center overflow-hidden shrink-0">
+            <AgentAvatar value={agent.emoji} className="w-8 h-8" />
           </div>
           <div className="min-w-0">
             <p className="text-[15px] font-semibold text-on-surface leading-tight">{agent.name}</p>
@@ -216,8 +227,8 @@ export default function AgentChatPage() {
         <div className="flex-1 overflow-y-auto p-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto gap-3 opacity-80">
-              <div className="w-20 h-20 rounded-2xl bg-primary-fixed shadow-sm flex items-center justify-center text-4xl mb-1">
-                {agent.emoji}
+              <div className="w-20 h-20 rounded-2xl bg-primary-fixed shadow-sm flex items-center justify-center overflow-hidden mb-1">
+                <AgentAvatar value={agent.emoji} className="w-16 h-16" />
               </div>
               <h2 className="text-[22px] font-semibold text-on-surface">{agent.name}</h2>
               <p className="text-[15px] text-on-surface-variant">Suhbatni boshlang</p>
@@ -227,8 +238,8 @@ export default function AgentChatPage() {
               {messages.map((msg, i) => msg.role === 'model' && msg.text === '' ? null : (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-2.5`}>
                   {msg.role === 'model' && (
-                    <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-sm shrink-0 mt-0.5">
-                      {agent.emoji}
+                    <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center overflow-hidden shrink-0 mt-0.5">
+                      <AgentAvatar value={agent.emoji} className="w-7 h-7" />
                     </div>
                   )}
                   <div className={`px-4 py-2.5 rounded-2xl leading-relaxed ${
@@ -249,8 +260,8 @@ export default function AgentChatPage() {
               {/* Typing dots */}
               {loading && messages.at(-1)?.role === 'model' && messages.at(-1)?.text === '' && (
                 <div className="flex justify-start gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-sm shrink-0">
-                    {agent.emoji}
+                  <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center overflow-hidden shrink-0">
+                    <AgentAvatar value={agent.emoji} className="w-7 h-7" />
                   </div>
                   <div className="bg-surface-container-low border border-outline-variant/20 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1 shadow-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-on-surface-variant/40 animate-bounce" style={{ animationDelay: '0ms' }} />

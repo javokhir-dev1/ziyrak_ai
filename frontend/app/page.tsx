@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Zap, Mail, MessageSquare, Users, MessageCircle, ArrowRight, FileText } from 'lucide-react';
 import { getInstagramStatus, getTodayStats, getLogs, getCommentRules } from '@/lib/api';
 import { useTheme } from '@/components/ThemeProvider';
+import InstagramRequired from '@/components/InstagramRequired';
+import { useInstagramStatus } from '@/context/InstagramContext';
 
 interface Log {
   id: number;
@@ -29,6 +31,7 @@ const logActionColor: Record<string, string> = {
 
 export default function DashboardPage() {
   const { theme } = useTheme();
+  const connected = useInstagramStatus();
   const [account,      setAccount]      = useState<any>(null);
   const [stats,        setStats]        = useState<{ commentReplies: number; dmUsers: number } | null>(null);
   const [activeRules,  setActiveRules]  = useState<number | null>(null);
@@ -36,29 +39,32 @@ export default function DashboardPage() {
   const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
-    Promise.allSettled([
-      getInstagramStatus().then(d => { if (d.connected) setAccount(d.account); }),
-      getTodayStats().then(d => setStats(d)),
-      getLogs(8).then(d => setLogs(d.logs || [])),
-      getCommentRules().then(d => {
-        const n = (d.rules || []).filter((r: any) => r.postId !== '__global__' && r.isActive).length;
-        setActiveRules(n);
-      }),
-    ]).finally(() => setLoading(false));
-  }, []);
+    if (connected === false) return;
+    getInstagramStatus().then(d => {
+      setAccount(d.account);
+      Promise.allSettled([
+        getTodayStats().then(d => setStats(d)),
+        getLogs(8).then(d => setLogs(d.logs || [])),
+        getCommentRules().then(d => {
+          const n = (d.rules || []).filter((r: any) => r.postId !== '__global__' && r.isActive).length;
+          setActiveRules(n);
+        }),
+      ]).finally(() => setLoading(false));
+    }).catch(() => {});
+  }, [connected]);
 
   const statCards = [
     {
       label: 'Bugun javob berilgan izohlar',
       value: stats?.commentReplies ?? null,
       icon: MessageSquare,
-      iconBg: 'bg-[#ebebfc] text-[#4648d4]',
+      iconBg: 'bg-[#ebebfc] text-[#7C3AED]',
     },
     {
       label: 'Bugun DM yuborilgan foydalanuvchilar',
       value: stats?.dmUsers ?? null,
       icon: Mail,
-      iconBg: 'bg-[#f3ebfc] text-[#8127cf]',
+      iconBg: 'bg-[#f3ebfc] text-[#8B5CF6]',
     },
     {
       label: 'Faol izoh avto-javob',
@@ -70,12 +76,12 @@ export default function DashboardPage() {
 
   const quickActions = [
     { href: '/automation',          icon: Zap,            label: 'Avtomatizatsiya',    desc: 'Barcha avtomatizatsiyalar' },
-    { href: '/automation/dm',       icon: Mail,           label: 'DM sozlash',         desc: 'Avto-javob xabarlarini sozla' },
     { href: '/automation/comments', icon: MessageCircle,  label: 'Izoh avto-javob',    desc: 'Post izohlari uchun avto-javob' },
     { href: '/logs',                icon: FileText,       label: 'Loglar',             desc: 'Bot faoliyati tarixi' },
   ];
 
   return (
+    <InstagramRequired>
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto p-8">
         <main className="max-w-5xl mx-auto space-y-7">
@@ -84,7 +90,7 @@ export default function DashboardPage() {
           <section className="relative rounded-2xl overflow-hidden p-6 sm:p-8 text-white"
             style={{ background: theme === 'dark'
               ? 'linear-gradient(135deg, #0f0520 0%, #1e0a4a 40%, #2d1060 70%, #1a0533 100%)'
-              : 'linear-gradient(135deg, #4648d4 0%, #6344d8 30%, #8127cf 65%, #9b1dc0 100%)'
+              : 'linear-gradient(135deg, #7C3AED 0%, #6344d8 30%, #8B5CF6 65%, #9b1dc0 100%)'
             }}
           >
             <div className="absolute inset-0 opacity-10"
@@ -97,7 +103,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-[14px] font-medium text-white/70 mb-1">Xush kelibsiz</p>
                 <h1 className="text-[24px] sm:text-[28px] font-bold tracking-tight leading-tight">
-                  {account ? `@${account.username}` : 'Ziyrak AI'}
+                  {account ? `@${account.username}` : 'JavobGo'}
                 </h1>
                 <p className="text-[14px] text-white/70 mt-1.5">
                   {account ? 'Instagram hisobingiz muvaffaqiyatli ulangan.' : 'Instagram hisobingizni sozlamalardan ulang.'}
@@ -204,11 +210,11 @@ export default function DashboardPage() {
                 ))}
               </div>
             </section>
-
           </div>
 
         </main>
       </div>
     </div>
+    </InstagramRequired>
   );
 }

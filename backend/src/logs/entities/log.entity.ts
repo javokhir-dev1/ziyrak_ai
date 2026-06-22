@@ -7,6 +7,12 @@ export class Log {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ nullable: true })
+  telegram_id: string;
+
+  @Column({ nullable: true })
+  instagram_account_id: string;
+
   @Column({ default: 'info' })
   type: LogType;
 
@@ -19,6 +25,9 @@ export class Log {
   @Column({ nullable: true })
   user: string;
 
+  @Column({ type: 'text', nullable: true })
+  userMessage: string;
+
   @CreateDateColumn()
-  timestamp: Date;
+  createdAt: Date;
 }

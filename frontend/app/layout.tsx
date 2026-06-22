@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Sidebar from '@/components/Sidebar';
+import ConditionalLayout from '@/components/ConditionalLayout';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import NavigationProgress from '@/components/NavigationProgress';
 
 export const metadata: Metadata = {
-  title: 'Ziyrak AI — Boshqaruv Paneli',
-  description: 'Instagram Auto Bot Dashboard',
+  title: 'JavobGo — Boshqaruv Paneli',
+  description: 'JavobGo — Instagram AI Avtomatizatsiya',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,10 +17,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-background text-on-surface antialiased flex h-screen overflow-hidden selection:bg-brand-100 selection:text-brand-900">
         <ThemeProvider>
-          <Sidebar />
-          <main className="ml-64 flex-1 flex flex-col h-full overflow-hidden w-[calc(100%-256px)]">
-            {children}
-          </main>
+          <NavigationProgress />
+          <ConditionalLayout>{children}</ConditionalLayout>
         </ThemeProvider>
       </body>
     </html>

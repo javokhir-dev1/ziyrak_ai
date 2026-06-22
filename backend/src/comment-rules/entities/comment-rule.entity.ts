@@ -5,6 +5,12 @@ export class CommentRule {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ nullable: true })
+  telegram_id: string;
+
+  @Column({ nullable: true })
+  instagram_account_id: string;
+
   @Column()
   postId: string;
 
@@ -17,21 +23,18 @@ export class CommentRule {
   @Column({ default: true })
   isActive: boolean;
 
-  // Kommentga javob — bir nechta variant (random tanlangan)
   @Column({ default: true })
   replyEnabled: boolean;
 
   @Column({ type: 'simple-json', default: '[]' })
   replyTemplates: string[];
 
-  // Kalit so'zlar
   @Column({ default: false })
   keywordsEnabled: boolean;
 
   @Column({ type: 'simple-array', default: '' })
   keywords: string[];
 
-  // DM yuborish — bir nechta variant (random tanlangan)
   @Column({ default: false })
   dmEnabled: boolean;
 

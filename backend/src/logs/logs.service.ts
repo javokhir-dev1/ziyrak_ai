@@ -11,37 +11,45 @@ export class LogsService {
     private repo: Repository<Log>,
   ) {}
 
-  async create(dto: CreateLogDto): Promise<Log> {
+  async create(dto: CreateLogDto & { telegram_id?: string; instagram_account_id?: string }): Promise<Log> {
     const log = this.repo.create(dto);
     return this.repo.save(log);
   }
 
-  async findAll(limit = 100): Promise<Log[]> {
+  async findAll(limit = 100, telegram_id?: string, instagram_account_id?: string): Promise<Log[]> {
+    const where: any = {};
+    if (telegram_id) where.telegram_id = telegram_id;
+    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
     return this.repo.find({
-      order: { timestamp: 'DESC' },
+      where: Object.keys(where).length ? where : {},
+      order: { createdAt: 'DESC' },
       take: limit,
     });
   }
 
-  async todayStats(): Promise<{ commentReplies: number; dmUsers: number }> {
+  async todayStats(telegram_id?: string, instagram_account_id?: string): Promise<{ commentReplies: number; dmUsers: number }> {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
+    const baseWhere: any = {};
+    if (telegram_id) baseWhere.telegram_id = telegram_id;
+    if (instagram_account_id) baseWhere.instagram_account_id = instagram_account_id;
+
     const [commentReplies, dmLogs] = await Promise.all([
-      // Bugun postlarga yuborilgan komment javoblari
       this.repo.count({
         where: {
+          ...baseWhere,
           action: 'Komment Javob',
           type: 'success',
-          timestamp: MoreThanOrEqual(todayStart),
+          createdAt: MoreThanOrEqual(todayStart),
         },
       }),
-      // Bugun DM olgan unikal foydalanuvchilar
       this.repo.find({
         where: {
+          ...baseWhere,
           action: 'DM Avtoreply',
           type: 'success',
-          timestamp: MoreThanOrEqual(todayStart),
+          createdAt: MoreThanOrEqual(todayStart),
         },
         select: ['user'],
       }),

@@ -1,4 +1,5 @@
 'use client';
+import InstagramRequired from '@/components/InstagramRequired';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,8 +9,20 @@ import {
 } from 'lucide-react';
 import {
   getAutomations, createAutomation, updateAutomation,
-  toggleAutomation, deleteAutomation, getInstagramPosts,
+  toggleAutomation, deleteAutomation, getInstagramPosts, getAgents,
 } from '@/lib/api';
+import { useInstagramStatus } from '@/context/InstagramContext';
+
+function avatarUrl(seed: string) {
+  return `https://api.dicebear.com/9.x/bottts/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+}
+function AgentAvatar({ value, className = 'w-6 h-6' }: { value: string; className?: string }) {
+  if (value?.startsWith('dicebear:')) {
+    const seed = value.split(':')[2] || 'Felix';
+    return <img src={avatarUrl(seed)} className={className} alt="avatar" />;
+  }
+  return <span className="text-base leading-none">{value}</span>;
+}
 
 interface Automation {
   id: number;
@@ -38,6 +51,8 @@ interface FormState {
   postScope: 'all' | 'specific';
   postIds: string[];
   postData: { id: string; caption?: string; thumbnail?: string }[];
+  replyAgentId: number | null;
+  dmAgentId: number | null;
 }
 
 const EMPTY_FORM: FormState = {
@@ -51,10 +66,13 @@ const EMPTY_FORM: FormState = {
   postScope: 'all',
   postIds: [],
   postData: [],
+  replyAgentId: null,
+  dmAgentId: null,
 };
 
 export default function AutomationCommentsPage() {
   const router = useRouter();
+  const connected = useInstagramStatus();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'create'>('list');
@@ -63,14 +81,20 @@ export default function AutomationCommentsPage() {
   const [posts, setPosts] = useState<any[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [agents, setAgents] = useState<any[]>([]);
 
   const load = async () => {
     try { setAutomations(await getAutomations()); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (connected === false) return;
+    load();
+    getAgents().then(setAgents).catch(() => setAgents([]));
+  }, [connected]);
 
   const loadPosts = async () => {
     setPostsLoading(true);
@@ -114,8 +138,22 @@ export default function AutomationCommentsPage() {
   };
 
   const save = async () => {
-    if (!form.name.trim()) return;
-    if (!form.replyEnabled && !form.dmEnabled) return;
+    setSaveError(null);
+    if (!form.name.trim()) { setSaveError('Avtomatizatsiya nomini kiriting'); return; }
+    if (!form.replyEnabled && !form.dmEnabled) { setSaveError('Kamida bitta amal yoqilishi kerak'); return; }
+
+    const validReplyTemplates = (form.replyTemplates || []).filter(t => t?.trim());
+    const validDmTemplates    = (form.dmTemplates    || []).filter(t => t?.trim());
+
+    if (form.replyEnabled && !form.replyAgentId && validReplyTemplates.length < 3) {
+      setSaveError('Izohga javob: AI agentsiz kamida 3 ta shablon kiritilishi shart');
+      return;
+    }
+    if (form.dmEnabled && !form.dmAgentId && validDmTemplates.length < 3) {
+      setSaveError('DM yuborish: AI agentsiz kamida 3 ta shablon kiritilishi shart');
+      return;
+    }
+
     setSaving(true);
     try {
       await createAutomation({ ...form, isActive: true });
@@ -149,15 +187,20 @@ export default function AutomationCommentsPage() {
             </button>
             <span className="font-semibold text-on-surface">Yangi avtomatizatsiya</span>
           </div>
-          <button
-            onClick={save}
-            disabled={!canSave || saving}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
-          >
-            <Save size={14} />
-            {saving ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
+          <div className="flex items-center gap-3">
+            {saveError && (
+              <span className="text-[12px] text-red-500 max-w-xs text-right leading-tight">{saveError}</span>
+            )}
+            <button
+              onClick={save}
+              disabled={!canSave || saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #8B5CF6)' }}
+            >
+              <Save size={14} />
+              {saving ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -253,34 +296,91 @@ export default function AutomationCommentsPage() {
                 </button>
                 {form.replyEnabled && (
                   <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
-                    <p className="text-xs text-on-surface-variant">
-                      Shablonlar — tasodifiy biri tanlanadi.{' '}
-                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
-                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> o'zgaruvchilarini ishlatishingiz mumkin.
-                    </p>
-                    {form.replyTemplates.map((t, i) => (
-                      <div key={i} className="flex gap-2">
-                        <textarea
-                          value={t}
-                          onChange={e => {
-                            const arr = [...form.replyTemplates];
-                            arr[i] = e.target.value;
-                            up({ replyTemplates: arr });
-                          }}
-                          rows={2}
-                          placeholder={`Javob ${i + 1}...`}
-                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
-                        />
-                        {form.replyTemplates.length > 1 && (
-                          <button onClick={() => up({ replyTemplates: form.replyTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                    {/* AI band xabari */}
+                    {form.replyAgentId !== null && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20">
+                        <span className="text-sm">🤖</span>
+                        <p className="text-xs text-primary font-medium">AI agent javob beradi — shablonlar ishlamaydi</p>
                       </div>
-                    ))}
-                    <button onClick={() => up({ replyTemplates: [...form.replyTemplates, ''] })} className="text-xs text-primary hover:underline">
-                      + Shablon qo'shish
-                    </button>
+                    )}
+                    <div className={form.replyAgentId !== null ? 'opacity-40 pointer-events-none select-none' : ''}>
+                      <p className="text-xs text-on-surface-variant mb-2">
+                        Shablonlar — tasodifiy biri tanlanadi.{' '}
+                        <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                        <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> o'zgaruvchilarini ishlatishingiz mumkin.
+                      </p>
+                      {form.replyTemplates.map((t, i) => (
+                        <div key={i} className="flex gap-2 mb-2">
+                          <textarea
+                            value={t}
+                            onChange={e => {
+                              const arr = [...form.replyTemplates];
+                              arr[i] = e.target.value;
+                              up({ replyTemplates: arr });
+                            }}
+                            rows={2}
+                            placeholder={`Javob ${i + 1}...`}
+                            className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                          />
+                          {form.replyTemplates.length > 1 && (
+                            <button onClick={() => up({ replyTemplates: form.replyTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button onClick={() => up({ replyTemplates: [...form.replyTemplates, ''] })} className="text-xs text-primary hover:underline">
+                        + Shablon qo'shish
+                      </button>
+                    </div>
+
+                    {/* AI Agent toggle */}
+                    <div className="pt-2 border-t border-outline-variant/20 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => up({ replyAgentId: form.replyAgentId !== null ? null : (agents[0]?.id ?? null) })}
+                        className="flex items-center justify-between w-full"
+                      >
+                        <span className="text-xs font-medium text-on-surface">🤖 AI agent yoqish</span>
+                        <span style={{
+                          width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                          border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                          backgroundColor: form.replyAgentId !== null ? '#3B82F6' : '#E5E7EB',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                          transition: 'background-color 0.25s ease',
+                        }}>
+                          <span style={{
+                            display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                            backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                            transform: form.replyAgentId !== null ? 'translateX(16px)' : 'translateX(0px)',
+                            transition: 'transform 0.25s ease',
+                          }} />
+                        </span>
+                      </button>
+                      {form.replyAgentId !== null && (
+                        <div className="mt-2 space-y-1">
+                          {agents.length === 0 ? (
+                            <p className="text-xs text-on-surface-variant italic">Hali agent yaratilmagan</p>
+                          ) : agents.map(agent => (
+                            <button
+                              key={agent.id}
+                              onClick={() => up({ replyAgentId: agent.id })}
+                              className={`w-full text-left px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
+                                form.replyAgentId === agent.id
+                                  ? 'border-primary bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-outline-variant'
+                              }`}
+                            >
+                              <AgentAvatar value={agent.emoji || '🤖'} className="w-6 h-6" />
+                              <span className="text-xs font-medium text-on-surface">{agent.name}</span>
+                              {form.replyAgentId === agent.id && (
+                                <span className="ml-auto text-xs text-primary font-medium">✓</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -312,34 +412,91 @@ export default function AutomationCommentsPage() {
                 </button>
                 {form.dmEnabled && (
                   <div className="px-4 pb-4 border-t border-outline-variant/20 pt-3 space-y-2">
-                    <p className="text-xs text-on-surface-variant">
-                      DM shablonlari — tasodifiy biri tanlanadi.{' '}
-                      <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
-                      <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> ishlatishingiz mumkin.
-                    </p>
-                    {form.dmTemplates.map((t, i) => (
-                      <div key={i} className="flex gap-2">
-                        <textarea
-                          value={t}
-                          onChange={e => {
-                            const arr = [...form.dmTemplates];
-                            arr[i] = e.target.value;
-                            up({ dmTemplates: arr });
-                          }}
-                          rows={2}
-                          placeholder={`DM ${i + 1}...`}
-                          className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
-                        />
-                        {form.dmTemplates.length > 1 && (
-                          <button onClick={() => up({ dmTemplates: form.dmTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                    {/* AI band xabari */}
+                    {form.dmAgentId !== null && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20">
+                        <span className="text-sm">🤖</span>
+                        <p className="text-xs text-primary font-medium">AI agent javob beradi — shablonlar ishlamaydi</p>
                       </div>
-                    ))}
-                    <button onClick={() => up({ dmTemplates: [...form.dmTemplates, ''] })} className="text-xs text-primary hover:underline">
-                      + Shablon qo'shish
-                    </button>
+                    )}
+                    <div className={form.dmAgentId !== null ? 'opacity-40 pointer-events-none select-none' : ''}>
+                      <p className="text-xs text-on-surface-variant mb-2">
+                        DM shablonlari — tasodifiy biri tanlanadi.{' '}
+                        <code className="bg-surface-variant px-1 rounded">{'{name}'}</code> va{' '}
+                        <code className="bg-surface-variant px-1 rounded">{'{comment}'}</code> ishlatishingiz mumkin.
+                      </p>
+                      {form.dmTemplates.map((t, i) => (
+                        <div key={i} className="flex gap-2 mb-2">
+                          <textarea
+                            value={t}
+                            onChange={e => {
+                              const arr = [...form.dmTemplates];
+                              arr[i] = e.target.value;
+                              up({ dmTemplates: arr });
+                            }}
+                            rows={2}
+                            placeholder={`DM ${i + 1}...`}
+                            className="flex-1 px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs outline-none focus:ring-2 ring-primary/40 resize-none"
+                          />
+                          {form.dmTemplates.length > 1 && (
+                            <button onClick={() => up({ dmTemplates: form.dmTemplates.filter((_, j) => j !== i) })} className="text-on-surface-variant hover:text-error self-start p-1 mt-1">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button onClick={() => up({ dmTemplates: [...form.dmTemplates, ''] })} className="text-xs text-primary hover:underline">
+                        + Shablon qo'shish
+                      </button>
+                    </div>
+
+                    {/* AI Agent toggle */}
+                    <div className="pt-2 border-t border-outline-variant/20 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => up({ dmAgentId: form.dmAgentId !== null ? null : (agents[0]?.id ?? null) })}
+                        className="flex items-center justify-between w-full"
+                      >
+                        <span className="text-xs font-medium text-on-surface">🤖 AI agent yoqish</span>
+                        <span style={{
+                          width: '36px', height: '20px', borderRadius: '10px', padding: '2px',
+                          border: 'none', display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                          backgroundColor: form.dmAgentId !== null ? '#3B82F6' : '#E5E7EB',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)',
+                          transition: 'background-color 0.25s ease',
+                        }}>
+                          <span style={{
+                            display: 'block', width: '16px', height: '16px', borderRadius: '50%',
+                            backgroundColor: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                            transform: form.dmAgentId !== null ? 'translateX(16px)' : 'translateX(0px)',
+                            transition: 'transform 0.25s ease',
+                          }} />
+                        </span>
+                      </button>
+                      {form.dmAgentId !== null && (
+                        <div className="mt-2 space-y-1">
+                          {agents.length === 0 ? (
+                            <p className="text-xs text-on-surface-variant italic">Hali agent yaratilmagan</p>
+                          ) : agents.map(agent => (
+                            <button
+                              key={agent.id}
+                              onClick={() => up({ dmAgentId: agent.id })}
+                              className={`w-full text-left px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
+                                form.dmAgentId === agent.id
+                                  ? 'border-primary bg-primary/5'
+                                  : 'border-outline-variant/30 hover:border-outline-variant'
+                              }`}
+                            >
+                              <AgentAvatar value={agent.emoji || '🤖'} className="w-6 h-6" />
+                              <span className="text-xs font-medium text-on-surface">{agent.name}</span>
+                              {form.dmAgentId === agent.id && (
+                                <span className="ml-auto text-xs text-primary font-medium">✓</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -434,12 +591,15 @@ export default function AutomationCommentsPage() {
               onClick={save}
               disabled={!canSave || saving}
               className="w-full py-3.5 rounded-2xl font-medium text-white text-sm hover:opacity-90 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
-              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #8B5CF6)' }}
             >
               <Save size={16} />
               {saving ? 'Saqlanmoqda...' : 'Avtomatizatsiyani saqlash'}
             </button>
-            {!form.name.trim() && (
+            {saveError && (
+              <p className="text-[12px] text-red-500 text-center mt-2">{saveError}</p>
+            )}
+            {!saveError && !form.name.trim() && (
               <p className="text-xs text-on-surface-variant text-center mt-2">Nom kiriting</p>
             )}
             {form.name.trim() && !form.replyEnabled && !form.dmEnabled && (
@@ -454,6 +614,7 @@ export default function AutomationCommentsPage() {
 
   // ─── LIST VIEW ────────────────────────────────────────────────────────────
   return (
+    <InstagramRequired>
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto p-8">
         <div className="container mx-auto max-w-5xl">
@@ -467,7 +628,7 @@ export default function AutomationCommentsPage() {
             <button
               onClick={openCreate}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white hover:opacity-90 transition-all"
-              style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #8B5CF6)' }}
             >
               <Plus size={16} />
               Yangi avtomatizatsiya
@@ -492,7 +653,7 @@ export default function AutomationCommentsPage() {
               <button
                 onClick={openCreate}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
-                style={{ background: 'linear-gradient(135deg, #4648d4, #8127cf)' }}
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #8B5CF6)' }}
               >
                 <Plus size={16} /> Avtomatizatsiya yaratish
               </button>
@@ -507,7 +668,7 @@ export default function AutomationCommentsPage() {
                 >
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={auto.isActive ? { background: 'linear-gradient(135deg, #4648d4, #8127cf)' } : {}}
+                    style={auto.isActive ? { background: 'linear-gradient(135deg, #7C3AED, #8B5CF6)' } : {}}
                   >
                     <Zap size={18} className={auto.isActive ? 'text-white' : 'text-on-surface-variant'} />
                   </div>
@@ -583,7 +744,7 @@ export default function AutomationCommentsPage() {
                     </button>
                     <button
                       onClick={e => { e.stopPropagation(); setDeleteId(auto.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-on-surface-variant hover:text-error transition-all p-1"
+                      className="text-on-surface-variant hover:text-error transition-colors p-1"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -614,6 +775,7 @@ export default function AutomationCommentsPage() {
         </div>
       )}
     </div>
+    </InstagramRequired>
   );
 }
 

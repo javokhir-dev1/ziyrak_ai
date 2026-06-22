@@ -9,13 +9,13 @@
 :root {
   --sidebar-w: 256px;
 
-  --md-primary:                    70  72 212;
-  --md-primary-container:          96  99 238;
-  --md-primary-fixed:             225 224 255;
+  --md-primary:                   139  92 246;
+  --md-primary-container:         124  58 237;
+  --md-primary-fixed:             237 233 254;
   --md-on-primary:                255 255 255;
   --md-on-primary-container:      255 251 255;
-  --md-secondary:                 129  39 207;
-  --md-secondary-container:       156  72 234;
+  --md-secondary:                 109  40 217;
+  --md-secondary-container:       124  58 237;
   --md-on-secondary-container:    255 251 255;
   --md-surface:                   247 249 251;
   --md-surface-dim:               216 218 220;
@@ -34,25 +34,25 @@
   --md-outline-variant:           199 196 215;
   --md-inverse-surface:            45  49  51;
   --md-inverse-on-surface:        239 241 243;
-  --md-inverse-primary:           192 193 255;
+  --md-inverse-primary:           167 139 250;
   --md-error:                     186  26  26;
   --md-error-container:           255 218 214;
   --md-on-error:                  255 255 255;
   --md-on-error-container:        147   0  10;
   /* legacy aliases */
-  --md-accent:                     70  72 212;
+  --md-accent:                    139  92 246;
   --md-accent-light:              225 224 255;
   --md-sidebar:                   255 255 255;
 }
 
 /* ── Dark theme ─────────────────────────────────────────────── */
 .dark {
-  --md-primary:                   192 193 255;
-  --md-primary-container:          40  42 170;
-  --md-primary-fixed:              30  29  63;
-  --md-on-primary:                 10  11 110;
-  --md-on-primary-container:      192 193 255;
-  --md-secondary:                 217 181 255;
+  --md-primary:                   167 139 250;
+  --md-primary-container:          76  29 149;
+  --md-primary-fixed:              46  16 101;
+  --md-on-primary:                 46  16 101;
+  --md-on-primary-container:      167 139 250;
+  --md-secondary:                 196 181 253;
   --md-secondary-container:        88   0 169;
   --md-on-secondary-container:    217 181 255;
   --md-surface:                    17  19  21;
@@ -72,13 +72,13 @@
   --md-outline-variant:            70  69  79;
   --md-inverse-surface:           225 227 229;
   --md-inverse-on-surface:         45  49  51;
-  --md-inverse-primary:            70  72 212;
+  --md-inverse-primary:           139  92 246;
   --md-error:                     255 180 171;
   --md-error-container:           147   0  10;
   --md-on-error:                  105   0   5;
   --md-on-error-container:        255 218 214;
-  --md-accent:                    192 193 255;
-  --md-accent-light:               30  29  63;
+  --md-accent:                    167 139 250;
+  --md-accent-light:               46  16 101;
   --md-sidebar:                    20  22  24;
 }
 
