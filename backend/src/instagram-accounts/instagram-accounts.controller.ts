@@ -91,29 +91,30 @@ export class InstagramAccountsController {
     return { connected: false };
   }
 
-  /** Token va account ID ni saqlash (tekshirib) */
+  /** Token orqali akkauntni ulash — ID tokendan avtomatik olinadi */
   @Post('account/connect')
   async connect(
     @Req() req: Request,
     @Body() body: {
       access_token: string;
-      instagram_account_id: string;
+      instagram_account_id?: string; // endi ixtiyoriy
       app_id?: string;
       app_secret?: string;
     },
   ) {
     const telegram_id = this.getTelegramId(req);
 
-    if (!body.access_token || !body.instagram_account_id) {
-      throw new BadRequestException('access_token va instagram_account_id talab qilinadi');
+    if (!body.access_token) {
+      throw new BadRequestException('access_token talab qilinadi');
     }
 
+    // /me endpoint orqali haqiqiy ID olinadi — webhook entry.id bilan mos keladi
     let igInfo: any;
     try {
-      igInfo = await this.service.verifyAndFetch(body.access_token, body.instagram_account_id);
+      igInfo = await this.service.fetchMe(body.access_token);
     } catch (err: any) {
       throw new BadRequestException(
-        `Instagram token yoki account ID noto'g'ri: ${err.response?.data?.error?.message || err.message}`,
+        `Instagram token noto'g'ri: ${err.response?.data?.error?.message || err.message}`,
       );
     }
 

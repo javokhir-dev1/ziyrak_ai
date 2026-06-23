@@ -52,6 +52,7 @@ export class WebhookService {
 
   async handleEntry(entry: any) {
     const igAccountId: string = entry.id;
+    this.logger.log(`📨 Webhook entry: ${igAccountId} | messaging:${entry.messaging?.length ?? 0} changes:${entry.changes?.length ?? 0}`);
 
     const account = await this.igAccounts.findByInstagramAccountId(igAccountId);
     if (!account) {
@@ -85,65 +86,38 @@ export class WebhookService {
     telegram_id: string,
     event: any,
   ) {
-    this.logger.log(`📩 DM webhook: ${JSON.stringify(event, null, 2)}`);
-    if (!event.message?.text) return;
-
     const senderId = event.sender?.id;
-    const recipientId = event.recipient?.id;
+    const isEcho = event.message?.is_echo;
+    this.logger.log(`📩 DM event: sender=${senderId} echo=${!!isEcho} text=${!!event.message?.text}`);
 
-    if (!senderId || !recipientId) return;
+    if (!event.message?.text) return;
+    if (!senderId) return;
 
-    // 1. Sender uchun saqlash (agar sender bizning tizimda bo'lsa)
-    const senderAccount = await this.igAccounts.findByInstagramAccountId(senderId);
-    if (senderAccount) {
-      try {
-        await this.inboxService.handleIncomingDM(
-          { token: senderAccount.access_token, accountId: senderAccount.instagram_account_id },
-          event,
-          senderAccount.telegram_id
-        );
-      } catch (err) {
-        this.logger.warn(`Sender inboxiga saqlash xatosi: ${err.message}`);
-      }
+    // Inboxga saqlash (direction inboxService ichida aniqlanadi)
+    try {
+      await this.inboxService.handleIncomingDM(creds, event);
+      this.logger.log(`✅ Inbox saqlandi: sender=${senderId} bot=${botAccountId}`);
+    } catch (err) {
+      this.logger.warn(`Inbox saqlash xatosi: ${err.message}`);
     }
 
-    // 2. Recipient uchun saqlash (agar recipient bizning tizimda bo'lsa)
-    const recipientAccount = await this.igAccounts.findByInstagramAccountId(recipientId);
-    if (recipientAccount) {
-      try {
-        await this.inboxService.handleIncomingDM(
-          { token: recipientAccount.access_token, accountId: recipientAccount.instagram_account_id },
-          event,
-          recipientAccount.telegram_id
-        );
-      } catch (err) {
-        this.logger.warn(`Recipient inboxiga saqlash xatosi: ${err.message}`);
-      }
-    }
-
-    // 3. Avto-javob logikasi: Faqat webhook kelgan akkaunt uchun va faqat u qabul qiluvchi bo'lganda (kiruvchi xabar)
-    // Ya'ni o'zi yuborgan xabarlarga avto-javob bermasligi kerak
+    // Avtoreply faqat kiruvchi xabarda (senderId !== botAccountId)
     if (senderId === botAccountId) return;
-
-    // Jo'natuvchi boshqa bot emasligiga ishonch hosil qilish (ping-pong oldini olish)
-    if (senderAccount) {
-      this.logger.log(`Cheksiz sikl oldi olindi: Yuboruvchi ${senderId} ham bot akkaunti.`);
-      return;
-    }
 
     const s = await this.settings.get();
     if (!s.dmAutoReplyEnabled) return;
 
     await this.rateLimit.randomDelay(MIN_DELAY_MS, MAX_DELAY_MS);
 
-    const userMessage = event.message.text || '';
+    const userMessage = event.message.text;
 
     try {
       let reply: string | null = null;
 
       if (s.dmMode === 'ai' && s.dmAgentId) {
-        const senderConv = await this.inboxService.getConversationBySender(senderId);
-        const senderName = senderConv?.participantUsername || senderId;
+        const convs = await this.inboxService.getConversations(botAccountId);
+        const conv  = convs.find(c => c.participantIgsid === senderId);
+        const senderName = conv?.participantUsername || senderId;
         reply = await this.generateAiReply(s.dmAgentId, telegram_id, senderName, userMessage);
       } else {
         reply = await this.dmMessages.getNextMessage(telegram_id, botAccountId);
@@ -275,7 +249,6 @@ export class WebhookService {
               telegram_id, instagram_account_id: botAccountId,
               type: 'error', action: 'Kommentdan DM',
               message: err.message, user: commenterName,
-              userMessage: commentText?.substring(0, 200),
             });
           }
         }

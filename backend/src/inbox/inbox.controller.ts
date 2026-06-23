@@ -25,40 +25,39 @@ export class InboxController {
     return String(payload.telegram_id);
   }
 
-  private async getCredsFromReq(req: Request): Promise<{ creds: IgCredentials; telegram_id: string }> {
+  private async getCreds(req: Request): Promise<{ creds: IgCredentials; ig_account_id: string }> {
     const telegram_id = this.getTelegramId(req);
     const account = await this.igAccounts.findByTelegramId(telegram_id);
-    if (!account || !account.access_token || !account.instagram_account_id) {
+    if (!account?.access_token || !account?.instagram_account_id) {
       throw new NotFoundException('Instagram hisobi ulanmagan');
     }
     return {
       creds: { token: account.access_token, accountId: account.instagram_account_id },
-      telegram_id,
+      ig_account_id: account.instagram_account_id,
     };
   }
 
+  /** SSE — faqat shu akkauntning xabarlari keladi */
   @Sse('events')
-  events(): Observable<MessageEvent> {
-    return this.inbox.events$.pipe(
-      map((payload) => ({
-        type: payload.type || 'message',
-        data: JSON.stringify(payload.data),
+  async events(@Req() req: Request): Promise<Observable<MessageEvent>> {
+    const { ig_account_id } = await this.getCreds(req);
+    return this.inbox.subscribe(ig_account_id).pipe(
+      map(({ type, data }) => ({
+        type,
+        data: JSON.stringify(data),
       })),
     );
   }
 
   @Get('conversations')
   async getConversations(@Req() req: Request) {
-    const telegram_id = this.getTelegramId(req);
-    // Tanlangan akkaunt bo'yicha filter
-    const account = await this.igAccounts.findByTelegramId(telegram_id);
-    const instagram_account_id = account?.instagram_account_id;
-    return this.inbox.getConversations(telegram_id, instagram_account_id);
+    const { ig_account_id } = await this.getCreds(req);
+    return this.inbox.getConversations(ig_account_id);
   }
 
-  @Get('conversations/:igConversationId/messages')
-  getMessages(@Param('igConversationId') igConversationId: string) {
-    return this.inbox.getMessages(igConversationId);
+  @Get('conversations/:id/messages')
+  async getMessages(@Param('id') id: string) {
+    return this.inbox.getMessages(Number(id));
   }
 
   @Post('conversations/:igsid/send')
@@ -68,27 +67,26 @@ export class InboxController {
     @Param('igsid') igsid: string,
     @Body() body: { text: string },
   ) {
-    const { creds, telegram_id } = await this.getCredsFromReq(req);
-    return this.inbox.sendMessage(creds, igsid, body.text, telegram_id);
+    const { creds } = await this.getCreds(req);
+    return this.inbox.sendMessage(creds, igsid, body.text);
   }
 
   @Post('sync')
   @HttpCode(200)
   async sync(@Req() req: Request) {
-    const { creds, telegram_id } = await this.getCredsFromReq(req);
-    return this.inbox.syncFromInstagram(creds, telegram_id);
+    const { creds } = await this.getCreds(req);
+    return this.inbox.syncFromInstagram(creds);
   }
 
   @Get('user/:igsid')
   async getUserInfo(@Req() req: Request, @Param('igsid') igsid: string) {
-    const { creds } = await this.getCredsFromReq(req);
+    const { creds } = await this.getCreds(req);
     return this.inbox.getUserInfo(creds, igsid);
   }
 
   @Post('reset')
   @HttpCode(200)
   async reset() {
-    await this.inbox.resetAndSync();
-    return { ok: true };
+    return this.inbox.resetInbox();
   }
 }

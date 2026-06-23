@@ -1,16 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Subject } from 'rxjs';
+import { Subject, Observable, finalize } from 'rxjs';
 import { Conversation } from './entities/conversation.entity';
 import { InboxMessage } from './entities/inbox-message.entity';
 import { InstagramService, IgCredentials } from '../instagram/instagram.service';
+
+export interface SseEvent {
+  type: string;
+  data: any;
+}
 
 @Injectable()
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
 
-  readonly events$ = new Subject<{ data: any; type?: string }>();
+  /** Room-based SSE: ig_account_id → Set<Subject> */
+  private readonly rooms = new Map<string, Set<Subject<SseEvent>>>();
 
   constructor(
     @InjectRepository(Conversation)
@@ -20,207 +26,219 @@ export class InboxService {
     private instagram: InstagramService,
   ) {}
 
-  // ─── Conversations ───
+  // ─── SSE ───────────────────────────────────────────────────────────────────
 
-  async getConversations(telegram_id: string, instagram_account_id?: string): Promise<Conversation[]> {
-    const where: any = { telegram_id };
-    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
+  subscribe(ig_account_id: string): Observable<SseEvent> {
+    const subject = new Subject<SseEvent>();
+
+    if (!this.rooms.has(ig_account_id)) {
+      this.rooms.set(ig_account_id, new Set());
+    }
+    this.rooms.get(ig_account_id)!.add(subject);
+
+    return subject.asObservable().pipe(
+      finalize(() => {
+        this.rooms.get(ig_account_id)?.delete(subject);
+        if (this.rooms.get(ig_account_id)?.size === 0) {
+          this.rooms.delete(ig_account_id);
+        }
+      }),
+    );
+  }
+
+  private emit(ig_account_id: string, type: string, data: any): void {
+    this.rooms.get(ig_account_id)?.forEach(sub => sub.next({ type, data }));
+  }
+
+  // ─── Conversations ─────────────────────────────────────────────────────────
+
+  async getConversations(ig_account_id: string): Promise<Conversation[]> {
     return this.convRepo.find({
-      where,
+      where: { instagram_account_id: ig_account_id },
       order: { lastMessageAt: 'DESC', updatedAt: 'DESC' },
     });
   }
 
-  async getMessages(igConversationId: string): Promise<InboxMessage[]> {
-    await this.convRepo.update({ igConversationId }, { unreadCount: 0 });
+  async getMessages(conversationId: number): Promise<InboxMessage[]> {
+    await this.convRepo.update({ id: conversationId }, { unreadCount: 0 });
     return this.msgRepo.find({
-      where: { igConversationId },
+      where: { conversationId },
       order: { igCreatedAt: 'ASC', createdAt: 'ASC' },
     });
   }
 
-  // ─── Incoming DM (webhookdan chaqiriladi) ───
+  // ─── Webhook dan kelgan DM ────────────────────────────────────────────────
 
-  async handleIncomingDM(creds: IgCredentials, event: any, telegram_id?: string): Promise<void> {
+  async handleIncomingDM(creds: IgCredentials, event: any): Promise<void> {
     const messageText: string = event.message?.text || '';
-    const messageId: string   = event.message?.mid || '';
+    const messageId: string   = event.message?.mid  || '';
     const timestamp: number   = event.timestamp;
-    const instagram_account_id = creds.accountId;
+    const ig_account_id       = creds.accountId;
 
     if (!messageText) return;
 
-    const senderId = event.sender?.id;
+    const senderId    = event.sender?.id;
     const recipientId = event.recipient?.id;
-
     if (!senderId || !recipientId) return;
 
+    // Direction aniqlash
     let direction: 'in' | 'out';
     let participantIgsid: string;
 
-    if (senderId === instagram_account_id) {
-      // A Holat: Faol akkaunt xabar yuboruvchi bo'lsa
-      direction = 'out';
+    if (senderId === ig_account_id) {
+      direction        = 'out';
       participantIgsid = recipientId;
-    } else {
-      // B Holat: Faol akkaunt xabar qabul qiluvchi bo'lsa
-      direction = 'in';
+    } else if (recipientId === ig_account_id) {
+      direction        = 'in';
       participantIgsid = senderId;
+    } else {
+      this.logger.warn(`DM mos kelmadi: sender=${senderId} recipient=${recipientId} account=${ig_account_id}`);
+      return;
     }
 
-    let participantUsername = participantIgsid;
-    let participantName: string | null = null;
-    let profilePic: string | null = null;
-    try {
-      const userInfo = await this.instagram.getUserInfo(creds, participantIgsid);
-      participantUsername = userInfo.username || userInfo.name || participantIgsid;
-      participantName = userInfo.name || null;
-      profilePic = userInfo.profile_pic || null;
-    } catch (e) {
-      this.logger.warn(`getUserInfo xatosi ${participantIgsid}: ${e.message}`);
-    }
+    this.logger.log(`💬 DM ${direction}: participant=${participantIgsid} account=${ig_account_id}`);
 
-    // igConversationId akkauntga xos bo'lsin
-    const igConversationId = `wh_${instagram_account_id}_${participantIgsid}`;
-    let conv = await this.convRepo.findOne({ where: { igConversationId, instagram_account_id } });
+    // Conversation upsert
+    let conv = await this.convRepo.findOne({
+      where: { instagram_account_id: ig_account_id, participantIgsid },
+    });
+
     if (!conv) {
+      let participantUsername = participantIgsid;
+      try {
+        const info = await this.instagram.getUserInfo(creds, participantIgsid);
+        participantUsername = info.username || info.name || participantIgsid;
+      } catch (e) {
+        this.logger.warn(`getUserInfo xatosi (${participantIgsid}): ${e.message}`);
+      }
+
       conv = this.convRepo.create({
-        telegram_id,
-        instagram_account_id,
-        igConversationId,
+        instagram_account_id: ig_account_id,
         participantIgsid,
         participantUsername,
-        participantName,
-        participantProfilePic: profilePic,
-        lastMessage: messageText,
-        lastMessageAt: timestamp ? new Date(timestamp) : new Date(),
-        unreadCount: direction === 'in' ? 1 : 0,
+        lastMessage:   messageText,
+        lastMessageAt: timestamp ? new Date(timestamp * 1000) : new Date(),
+        unreadCount:   direction === 'in' ? 1 : 0,
       });
     } else {
-      if (telegram_id && !conv.telegram_id) conv.telegram_id = telegram_id;
-      conv.participantUsername = participantUsername;
-      if (participantName) conv.participantName = participantName;
-      if (profilePic) conv.participantProfilePic = profilePic;
-      conv.lastMessage = messageText;
-      conv.lastMessageAt = timestamp ? new Date(timestamp) : new Date();
+      conv.lastMessage   = messageText;
+      conv.lastMessageAt = timestamp ? new Date(timestamp * 1000) : new Date();
       if (direction === 'in') conv.unreadCount = (conv.unreadCount || 0) + 1;
     }
-    await this.convRepo.save(conv);
 
-    const exists = messageId ? await this.msgRepo.findOne({ where: { igMessageId: messageId, instagram_account_id } }) : null;
-    if (!exists) {
-      const msg = this.msgRepo.create({
-        telegram_id,
-        instagram_account_id,
-        igMessageId: messageId || null,
-        igConversationId: conv.igConversationId,
-        participantIgsid,
-        direction,
-        messageText,
-        fromUsername: direction === 'out' ? 'me' : participantIgsid,
-        igCreatedAt: timestamp ? new Date(timestamp) : new Date(),
-      });
-      await this.msgRepo.save(msg);
+    conv = await this.convRepo.save(conv);
 
-      if (direction === 'in') {
-        this.events$.next({ type: 'new_message', data: { conversation: conv, message: msg } });
-      }
+    // Message insert — igMessageId UNIQUE dublikatdan saqlaydi
+    if (messageId) {
+      const exists = await this.msgRepo.findOne({ where: { igMessageId: messageId } });
+      if (exists) return;
     }
-  }
-
-  // ─── Xabar yuborish ───
-
-  async sendMessage(creds: IgCredentials, participantIgsid: string, text: string, telegram_id?: string): Promise<InboxMessage> {
-    await this.instagram.sendDM(creds, participantIgsid, text);
-
-    const instagram_account_id = creds.accountId;
-    const igConversationId = `wh_${instagram_account_id}_${participantIgsid}`;
-    let conv = await this.convRepo.findOne({ where: { igConversationId, instagram_account_id } });
-    if (!conv) {
-      conv = this.convRepo.create({
-        telegram_id,
-        instagram_account_id,
-        igConversationId,
-        participantIgsid,
-        participantUsername: participantIgsid,
-        lastMessage: text,
-        lastMessageAt: new Date(),
-        unreadCount: 0,
-      });
-    } else {
-      if (telegram_id && !conv.telegram_id) conv.telegram_id = telegram_id;
-      conv.lastMessage = text;
-      conv.lastMessageAt = new Date();
-    }
-    await this.convRepo.save(conv);
 
     const msg = this.msgRepo.create({
-      telegram_id,
-      instagram_account_id,
-      igConversationId: conv.igConversationId,
+      instagram_account_id: ig_account_id,
+      conversationId:       conv.id,
       participantIgsid,
-      direction: 'out',
-      messageText: text,
-      fromUsername: 'me',
-      igCreatedAt: new Date(),
+      igMessageId:  messageId || null,
+      direction,
+      messageText,
+      igCreatedAt:  timestamp ? new Date(timestamp * 1000) : new Date(),
     });
     await this.msgRepo.save(msg);
 
-    return msg;
+    if (direction === 'in') {
+      this.emit(ig_account_id, 'new_message', { conversation: conv, message: msg });
+    }
   }
 
-  // ─── Instagram API dan suhbatlarni sync qilish ───
+  // ─── Xabar yuborish ───────────────────────────────────────────────────────
 
-  async syncFromInstagram(creds: IgCredentials, telegram_id?: string): Promise<{ synced: number; messages: number }> {
+  async sendMessage(
+    creds: IgCredentials,
+    participantIgsid: string,
+    text: string,
+  ): Promise<InboxMessage> {
+    const ig_account_id = creds.accountId;
+
+    await this.instagram.sendDM(creds, participantIgsid, text);
+
+    let conv = await this.convRepo.findOne({
+      where: { instagram_account_id: ig_account_id, participantIgsid },
+    });
+
+    if (!conv) {
+      conv = this.convRepo.create({
+        instagram_account_id: ig_account_id,
+        participantIgsid,
+        participantUsername: participantIgsid,
+        lastMessage:   text,
+        lastMessageAt: new Date(),
+        unreadCount:   0,
+      });
+    } else {
+      conv.lastMessage   = text;
+      conv.lastMessageAt = new Date();
+    }
+    conv = await this.convRepo.save(conv);
+
+    const msg = this.msgRepo.create({
+      instagram_account_id: ig_account_id,
+      conversationId:       conv.id,
+      participantIgsid,
+      direction:   'out',
+      messageText: text,
+      igCreatedAt: new Date(),
+    });
+
+    return this.msgRepo.save(msg);
+  }
+
+  // ─── Instagram API sync ───────────────────────────────────────────────────
+
+  async syncFromInstagram(
+    creds: IgCredentials,
+  ): Promise<{ synced: number; messages: number }> {
+    const ig_account_id = creds.accountId;
     let syncedConvs = 0;
-    let syncedMsgs = 0;
-    const botAccountId = creds.accountId;
-    const instagram_account_id = creds.accountId;
+    let syncedMsgs  = 0;
 
     try {
-      this.logger.log('=== SYNC BOSHLANDI ===');
-      const conversations = await this.instagram.getConversations(creds);
-      this.logger.log(`Jami suhbatlar soni: ${conversations.length}`);
+      const igConversations = await this.instagram.getConversations(creds);
 
-      for (const igConv of conversations) {
-        const convId: string = igConv.id;
+      for (const igConv of igConversations) {
+        const convId = igConv.id;
 
-        let participantIgsid = '';
+        let participantIgsid    = '';
         let participantUsername = '';
         try {
           const participants = await this.instagram.getConversationParticipants(creds, convId);
-          const other = participants.find((p: any) => p.id !== botAccountId);
+          const other = participants.find((p: any) => p.id !== ig_account_id);
           if (other) {
-            participantIgsid = other.id || '';
+            participantIgsid    = other.id       || '';
             participantUsername = other.username || other.id || '';
           }
         } catch (e) {
-          this.logger.warn(`Participants xatosi ${convId}: ${e.message}`);
+          this.logger.warn(`Participants xatosi (${convId}): ${e.message}`);
         }
 
         if (!participantIgsid) participantIgsid = `ig_${convId}`;
 
-        // Akkauntga xos qidiruv
-        let conv = await this.convRepo.findOne({ where: { igConversationId: convId, instagram_account_id } });
-        if (!conv && participantIgsid) {
-          const webhookConvId = `wh_${instagram_account_id}_${participantIgsid}`;
-          conv = await this.convRepo.findOne({ where: { igConversationId: webhookConvId, instagram_account_id } });
-        }
+        let conv = await this.convRepo.findOne({
+          where: { instagram_account_id: ig_account_id, participantIgsid },
+        });
+
         if (!conv) {
           conv = this.convRepo.create({
-            telegram_id,
-            instagram_account_id,
-            igConversationId: convId,
+            instagram_account_id: ig_account_id,
             participantIgsid,
             participantUsername,
+            igConversationId: convId,
             lastMessageAt: igConv.updated_time ? new Date(igConv.updated_time) : new Date(),
           });
           await this.convRepo.save(conv);
           syncedConvs++;
         } else {
-          conv.participantIgsid = participantIgsid || conv.participantIgsid;
+          conv.igConversationId   = convId;
           conv.participantUsername = participantUsername || conv.participantUsername;
-          if (telegram_id && !conv.telegram_id) conv.telegram_id = telegram_id;
-          if (!conv.instagram_account_id) conv.instagram_account_id = instagram_account_id;
           await this.convRepo.save(conv);
         }
 
@@ -233,22 +251,21 @@ export class InboxService {
             if (exists) continue;
 
             try {
-              const detail = await this.instagram.getMessageDetail(creds, igMsg.id);
+              const detail  = await this.instagram.getMessageDetail(creds, igMsg.id);
               const msgText = detail.message?.trim() || '';
               if (!msgText) continue;
 
-              const direction: 'in' | 'out' = detail.from?.id === participantIgsid ? 'in' : 'out';
+              const direction: 'in' | 'out' =
+                detail.from?.id === participantIgsid ? 'in' : 'out';
 
               const msg = this.msgRepo.create({
-                telegram_id,
-                instagram_account_id,
-                igMessageId: igMsg.id,
-                igConversationId: conv.igConversationId,
+                instagram_account_id: ig_account_id,
+                conversationId:       conv.id,
                 participantIgsid,
+                igMessageId:  igMsg.id,
                 direction,
-                messageText: msgText,
-                fromUsername: detail.from?.username || detail.from?.id || '',
-                igCreatedAt: detail.created_time ? new Date(detail.created_time) : new Date(),
+                messageText:  msgText,
+                igCreatedAt:  detail.created_time ? new Date(detail.created_time) : new Date(),
               });
               await this.msgRepo.save(msg);
               syncedMsgs++;
@@ -256,17 +273,17 @@ export class InboxService {
               const msgAt = detail.created_time ? new Date(detail.created_time) : new Date();
               if (!lastMsg || msgAt > lastMsg.at) lastMsg = { text: msgText, at: msgAt };
             } catch (e) {
-              this.logger.warn(`Message detail xatosi ${igMsg.id}: ${e.message}`);
+              this.logger.warn(`Message detail xatosi (${igMsg.id}): ${e.message}`);
             }
           }
 
           if (lastMsg) {
-            conv.lastMessage = lastMsg.text;
+            conv.lastMessage   = lastMsg.text;
             conv.lastMessageAt = lastMsg.at;
             await this.convRepo.save(conv);
           }
         } catch (e) {
-          this.logger.warn(`Messages xatosi ${convId}: ${e.message}`);
+          this.logger.warn(`Messages xatosi (${convId}): ${e.message}`);
         }
       }
     } catch (e) {
@@ -274,26 +291,18 @@ export class InboxService {
       throw e;
     }
 
-    this.logger.log(`=== SYNC TUGADI: ${syncedConvs} yangi suhbat, ${syncedMsgs} yangi xabar ===`);
+    this.logger.log(`Sync tugadi: ${syncedConvs} suhbat, ${syncedMsgs} xabar`);
     return { synced: syncedConvs, messages: syncedMsgs };
-  }
-
-  async getConversationBySender(igsid: string): Promise<Conversation | null> {
-    return this.convRepo.findOne({ where: { participantIgsid: igsid } });
   }
 
   async getUserInfo(creds: IgCredentials, igsid: string) {
     return this.instagram.getUserInfo(creds, igsid);
   }
 
-  async resetAndSync(): Promise<{ ok: boolean }> {
-    this.logger.log('=== INBOX RESET ===');
+  async resetInbox(): Promise<{ ok: boolean }> {
     await this.msgRepo.clear();
     await this.convRepo.clear();
+    this.logger.log('Inbox reset qilindi');
     return { ok: true };
-  }
-
-  async updateConversationUsername(igConversationId: string, username: string) {
-    await this.convRepo.update({ igConversationId }, { participantUsername: username });
   }
 }

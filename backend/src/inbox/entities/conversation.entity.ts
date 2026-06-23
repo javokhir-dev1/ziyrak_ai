@@ -1,22 +1,22 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import {
+  Entity, PrimaryGeneratedColumn, Column,
+  CreateDateColumn, UpdateDateColumn, Index,
+} from 'typeorm';
 
 @Entity('inbox_conversations')
-@Index(['igConversationId', 'instagram_account_id'], { unique: true })
+@Index(['instagram_account_id', 'participantIgsid'], { unique: true })
 export class Conversation {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ nullable: true })
-  telegram_id: string;
-
-  @Column({ nullable: true })
+  @Column()
   instagram_account_id: string;
 
   @Column()
-  igConversationId: string;
-
-  @Column()
   participantIgsid: string;
+
+  @Column({ nullable: true })
+  igConversationId: string;
 
   @Column({ default: '' })
   participantUsername: string;
@@ -27,7 +27,7 @@ export class Conversation {
   @Column({ nullable: true })
   participantProfilePic: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   lastMessage: string;
 
   @Column({ nullable: true, type: 'timestamptz' })

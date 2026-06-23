@@ -33,7 +33,16 @@ export class InstagramAccountsService {
   }
 
   async findByInstagramAccountId(instagram_account_id: string): Promise<InstagramAccount | null> {
-    return this.repo.findOne({ where: { instagram_account_id, is_active: true } });
+    // Avval aktiv akkauntni qidirish; topilmasa is_active: false bo'lsa ham qaytarish
+    const active = await this.repo.findOne({
+      where: { instagram_account_id, is_active: true },
+      order: { updated_at: 'DESC' },
+    });
+    if (active) return active;
+    return this.repo.findOne({
+      where: { instagram_account_id },
+      order: { updated_at: 'DESC' },
+    });
   }
 
   /** Akkauntni qo'shish yoki yangilash (telegram_id + instagram_account_id bo'yicha) */
@@ -94,14 +103,17 @@ export class InstagramAccountsService {
     }
   }
 
-  /** Token va account ID ni tekshirib, username ni qaytaradi */
-  async verifyAndFetch(access_token: string, instagram_account_id: string): Promise<{
+  /**
+   * /me endpoint orqali tokenga tegishli haqiqiy akkaunt ID ni olish.
+   * Bu Meta webhookdagi entry.id bilan bir xil bo'ladi.
+   */
+  async fetchMe(access_token: string): Promise<{
     id: string;
     username: string;
     followers_count?: number;
     media_count?: number;
   }> {
-    const res = await axios.get(`${BASE_URL}/${instagram_account_id}`, {
+    const res = await axios.get(`${BASE_URL}/me`, {
       params: {
         fields: 'id,username,followers_count,media_count',
         access_token,
