@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 @Entity('inbox_conversations')
+@Index(['igConversationId', 'instagram_account_id'], { unique: true })
 export class Conversation {
   @PrimaryGeneratedColumn()
   id: number;
@@ -8,7 +9,10 @@ export class Conversation {
   @Column({ nullable: true })
   telegram_id: string;
 
-  @Column({ unique: true })
+  @Column({ nullable: true })
+  instagram_account_id: string;
+
+  @Column()
   igConversationId: string;
 
   @Column()

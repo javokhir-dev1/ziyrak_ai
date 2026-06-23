@@ -86,16 +86,49 @@ export class WebhookService {
     event: any,
   ) {
     this.logger.log(`📩 DM webhook: ${JSON.stringify(event, null, 2)}`);
-    if (event.message?.is_echo) return;
     if (!event.message?.text) return;
 
-    const senderId: string = event.sender?.id;
-    if (!senderId) return;
+    const senderId = event.sender?.id;
+    const recipientId = event.recipient?.id;
 
-    try {
-      await this.inboxService.handleIncomingDM(creds, event, telegram_id);
-    } catch (err) {
-      this.logger.warn(`Inbox saqlash xatosi: ${err.message}`);
+    if (!senderId || !recipientId) return;
+
+    // 1. Sender uchun saqlash (agar sender bizning tizimda bo'lsa)
+    const senderAccount = await this.igAccounts.findByInstagramAccountId(senderId);
+    if (senderAccount) {
+      try {
+        await this.inboxService.handleIncomingDM(
+          { token: senderAccount.access_token, accountId: senderAccount.instagram_account_id },
+          event,
+          senderAccount.telegram_id
+        );
+      } catch (err) {
+        this.logger.warn(`Sender inboxiga saqlash xatosi: ${err.message}`);
+      }
+    }
+
+    // 2. Recipient uchun saqlash (agar recipient bizning tizimda bo'lsa)
+    const recipientAccount = await this.igAccounts.findByInstagramAccountId(recipientId);
+    if (recipientAccount) {
+      try {
+        await this.inboxService.handleIncomingDM(
+          { token: recipientAccount.access_token, accountId: recipientAccount.instagram_account_id },
+          event,
+          recipientAccount.telegram_id
+        );
+      } catch (err) {
+        this.logger.warn(`Recipient inboxiga saqlash xatosi: ${err.message}`);
+      }
+    }
+
+    // 3. Avto-javob logikasi: Faqat webhook kelgan akkaunt uchun va faqat u qabul qiluvchi bo'lganda (kiruvchi xabar)
+    // Ya'ni o'zi yuborgan xabarlarga avto-javob bermasligi kerak
+    if (senderId === botAccountId) return;
+
+    // Jo'natuvchi boshqa bot emasligiga ishonch hosil qilish (ping-pong oldini olish)
+    if (senderAccount) {
+      this.logger.log(`Cheksiz sikl oldi olindi: Yuboruvchi ${senderId} ham bot akkaunti.`);
+      return;
     }
 
     const s = await this.settings.get();
@@ -109,8 +142,8 @@ export class WebhookService {
       let reply: string | null = null;
 
       if (s.dmMode === 'ai' && s.dmAgentId) {
-        const sender = await this.inboxService.getConversationBySender(senderId);
-        const senderName = sender?.participantUsername || senderId;
+        const senderConv = await this.inboxService.getConversationBySender(senderId);
+        const senderName = senderConv?.participantUsername || senderId;
         reply = await this.generateAiReply(s.dmAgentId, telegram_id, senderName, userMessage);
       } else {
         reply = await this.dmMessages.getNextMessage(telegram_id, botAccountId);

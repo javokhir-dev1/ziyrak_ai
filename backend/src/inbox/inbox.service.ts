@@ -22,9 +22,11 @@ export class InboxService {
 
   // ─── Conversations ───
 
-  async getConversations(telegram_id: string): Promise<Conversation[]> {
+  async getConversations(telegram_id: string, instagram_account_id?: string): Promise<Conversation[]> {
+    const where: any = { telegram_id };
+    if (instagram_account_id) where.instagram_account_id = instagram_account_id;
     return this.convRepo.find({
-      where: { telegram_id },
+      where,
       order: { lastMessageAt: 'DESC', updatedAt: 'DESC' },
     });
   }
@@ -40,69 +42,88 @@ export class InboxService {
   // ─── Incoming DM (webhookdan chaqiriladi) ───
 
   async handleIncomingDM(creds: IgCredentials, event: any, telegram_id?: string): Promise<void> {
-    if (event.message?.is_echo) return;
-
-    const senderIgsid: string = event.sender?.id;
     const messageText: string = event.message?.text || '';
     const messageId: string   = event.message?.mid || '';
     const timestamp: number   = event.timestamp;
+    const instagram_account_id = creds.accountId;
 
-    if (!senderIgsid || !messageText) return;
+    if (!messageText) return;
 
-    let participantUsername = senderIgsid;
+    const senderId = event.sender?.id;
+    const recipientId = event.recipient?.id;
+
+    if (!senderId || !recipientId) return;
+
+    let direction: 'in' | 'out';
+    let participantIgsid: string;
+
+    if (senderId === instagram_account_id) {
+      // A Holat: Faol akkaunt xabar yuboruvchi bo'lsa
+      direction = 'out';
+      participantIgsid = recipientId;
+    } else {
+      // B Holat: Faol akkaunt xabar qabul qiluvchi bo'lsa
+      direction = 'in';
+      participantIgsid = senderId;
+    }
+
+    let participantUsername = participantIgsid;
     let participantName: string | null = null;
     let profilePic: string | null = null;
     try {
-      const userInfo = await this.instagram.getUserInfo(creds, senderIgsid);
-      participantUsername = userInfo.username || userInfo.name || senderIgsid;
+      const userInfo = await this.instagram.getUserInfo(creds, participantIgsid);
+      participantUsername = userInfo.username || userInfo.name || participantIgsid;
       participantName = userInfo.name || null;
       profilePic = userInfo.profile_pic || null;
     } catch (e) {
-      this.logger.warn(`getUserInfo xatosi ${senderIgsid}: ${e.message}`);
+      this.logger.warn(`getUserInfo xatosi ${participantIgsid}: ${e.message}`);
     }
 
-    // igConversationId bo'yicha qidirish (unique, deterministik)
-    const igConversationId = `wh_${senderIgsid}`;
-    let conv = await this.convRepo.findOne({ where: { igConversationId } });
+    // igConversationId akkauntga xos bo'lsin
+    const igConversationId = `wh_${instagram_account_id}_${participantIgsid}`;
+    let conv = await this.convRepo.findOne({ where: { igConversationId, instagram_account_id } });
     if (!conv) {
       conv = this.convRepo.create({
         telegram_id,
+        instagram_account_id,
         igConversationId,
-        participantIgsid: senderIgsid,
+        participantIgsid,
         participantUsername,
         participantName,
         participantProfilePic: profilePic,
         lastMessage: messageText,
         lastMessageAt: timestamp ? new Date(timestamp) : new Date(),
-        unreadCount: 1,
+        unreadCount: direction === 'in' ? 1 : 0,
       });
     } else {
-      // telegram_id yangilash (eski null yozuvlar uchun)
       if (telegram_id && !conv.telegram_id) conv.telegram_id = telegram_id;
       conv.participantUsername = participantUsername;
       if (participantName) conv.participantName = participantName;
       if (profilePic) conv.participantProfilePic = profilePic;
       conv.lastMessage = messageText;
       conv.lastMessageAt = timestamp ? new Date(timestamp) : new Date();
-      conv.unreadCount = (conv.unreadCount || 0) + 1;
+      if (direction === 'in') conv.unreadCount = (conv.unreadCount || 0) + 1;
     }
     await this.convRepo.save(conv);
 
-    const exists = messageId ? await this.msgRepo.findOne({ where: { igMessageId: messageId } }) : null;
+    const exists = messageId ? await this.msgRepo.findOne({ where: { igMessageId: messageId, instagram_account_id } }) : null;
     if (!exists) {
       const msg = this.msgRepo.create({
         telegram_id,
+        instagram_account_id,
         igMessageId: messageId || null,
         igConversationId: conv.igConversationId,
-        participantIgsid: senderIgsid,
-        direction: 'in',
+        participantIgsid,
+        direction,
         messageText,
-        fromUsername: senderIgsid,
+        fromUsername: direction === 'out' ? 'me' : participantIgsid,
         igCreatedAt: timestamp ? new Date(timestamp) : new Date(),
       });
       await this.msgRepo.save(msg);
 
-      this.events$.next({ type: 'new_message', data: { conversation: conv, message: msg } });
+      if (direction === 'in') {
+        this.events$.next({ type: 'new_message', data: { conversation: conv, message: msg } });
+      }
     }
   }
 
@@ -111,11 +132,13 @@ export class InboxService {
   async sendMessage(creds: IgCredentials, participantIgsid: string, text: string, telegram_id?: string): Promise<InboxMessage> {
     await this.instagram.sendDM(creds, participantIgsid, text);
 
-    const igConversationId = `wh_${participantIgsid}`;
-    let conv = await this.convRepo.findOne({ where: { igConversationId } });
+    const instagram_account_id = creds.accountId;
+    const igConversationId = `wh_${instagram_account_id}_${participantIgsid}`;
+    let conv = await this.convRepo.findOne({ where: { igConversationId, instagram_account_id } });
     if (!conv) {
       conv = this.convRepo.create({
         telegram_id,
+        instagram_account_id,
         igConversationId,
         participantIgsid,
         participantUsername: participantIgsid,
@@ -132,6 +155,7 @@ export class InboxService {
 
     const msg = this.msgRepo.create({
       telegram_id,
+      instagram_account_id,
       igConversationId: conv.igConversationId,
       participantIgsid,
       direction: 'out',
@@ -150,6 +174,7 @@ export class InboxService {
     let syncedConvs = 0;
     let syncedMsgs = 0;
     const botAccountId = creds.accountId;
+    const instagram_account_id = creds.accountId;
 
     try {
       this.logger.log('=== SYNC BOSHLANDI ===');
@@ -174,15 +199,16 @@ export class InboxService {
 
         if (!participantIgsid) participantIgsid = `ig_${convId}`;
 
-        // Avval real IG conv ID bilan qidirish, keyin webhook conv bilan (merge uchun)
-        let conv = await this.convRepo.findOne({ where: { igConversationId: convId } });
+        // Akkauntga xos qidiruv
+        let conv = await this.convRepo.findOne({ where: { igConversationId: convId, instagram_account_id } });
         if (!conv && participantIgsid) {
-          // Webhook orqali yaratilgan suhbatni topish — igConversationId o'zgartirilmaydi
-          conv = await this.convRepo.findOne({ where: { igConversationId: `wh_${participantIgsid}` } });
+          const webhookConvId = `wh_${instagram_account_id}_${participantIgsid}`;
+          conv = await this.convRepo.findOne({ where: { igConversationId: webhookConvId, instagram_account_id } });
         }
         if (!conv) {
           conv = this.convRepo.create({
             telegram_id,
+            instagram_account_id,
             igConversationId: convId,
             participantIgsid,
             participantUsername,
@@ -194,6 +220,7 @@ export class InboxService {
           conv.participantIgsid = participantIgsid || conv.participantIgsid;
           conv.participantUsername = participantUsername || conv.participantUsername;
           if (telegram_id && !conv.telegram_id) conv.telegram_id = telegram_id;
+          if (!conv.instagram_account_id) conv.instagram_account_id = instagram_account_id;
           await this.convRepo.save(conv);
         }
 
@@ -214,6 +241,7 @@ export class InboxService {
 
               const msg = this.msgRepo.create({
                 telegram_id,
+                instagram_account_id,
                 igMessageId: igMsg.id,
                 igConversationId: conv.igConversationId,
                 participantIgsid,

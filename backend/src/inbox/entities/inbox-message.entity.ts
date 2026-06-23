@@ -8,6 +8,9 @@ export class InboxMessage {
   @Column({ nullable: true })
   telegram_id: string;
 
+  @Column({ nullable: true })
+  instagram_account_id: string;
+
   @Column({ unique: true, nullable: true })
   igMessageId: string;
 

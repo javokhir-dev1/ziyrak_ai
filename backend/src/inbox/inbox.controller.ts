@@ -48,9 +48,12 @@ export class InboxController {
   }
 
   @Get('conversations')
-  getConversations(@Req() req: Request) {
+  async getConversations(@Req() req: Request) {
     const telegram_id = this.getTelegramId(req);
-    return this.inbox.getConversations(telegram_id);
+    // Tanlangan akkaunt bo'yicha filter
+    const account = await this.igAccounts.findByTelegramId(telegram_id);
+    const instagram_account_id = account?.instagram_account_id;
+    return this.inbox.getConversations(telegram_id, instagram_account_id);
   }
 
   @Get('conversations/:igConversationId/messages')
