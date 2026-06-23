@@ -73,6 +73,7 @@ export class InboxService {
     const messageText: string = event.message?.text || '';
     const messageId: string   = event.message?.mid  || '';
     const timestamp: number   = event.timestamp;
+
     const ig_account_id       = creds.accountId;
 
     if (!messageText) return;
@@ -117,12 +118,12 @@ export class InboxService {
         participantIgsid,
         participantUsername,
         lastMessage:   messageText,
-        lastMessageAt: timestamp ? new Date(timestamp * 1000) : new Date(),
+        lastMessageAt: timestamp ? new Date(timestamp > 1e12 ? timestamp : timestamp * 1000) : new Date(),
         unreadCount:   direction === 'in' ? 1 : 0,
       });
     } else {
       conv.lastMessage   = messageText;
-      conv.lastMessageAt = timestamp ? new Date(timestamp * 1000) : new Date();
+      conv.lastMessageAt = timestamp ? new Date(timestamp > 1e12 ? timestamp : timestamp * 1000) : new Date();
       if (direction === 'in') conv.unreadCount = (conv.unreadCount || 0) + 1;
     }
 
@@ -141,7 +142,7 @@ export class InboxService {
       igMessageId:  messageId || null,
       direction,
       messageText,
-      igCreatedAt:  timestamp ? new Date(timestamp * 1000) : new Date(),
+      igCreatedAt:  timestamp ? new Date(timestamp > 1e12 ? timestamp : timestamp * 1000) : new Date(),
     });
     await this.msgRepo.save(msg);
 

@@ -23,11 +23,10 @@ interface Conversation {
 
 interface InboxMessage {
   id: number;
-  igConversationId: string;
+  conversationId: number;
   participantIgsid: string;
   direction: 'in' | 'out';
   messageText: string;
-  fromUsername: string;
   igCreatedAt: string | null;
   createdAt: string;
 }
@@ -428,7 +427,7 @@ export default function InboxPage() {
         const { conversation, message } = payload;
 
         setConversations(prev => {
-          const idx = prev.findIndex(c => c.igConversationId === conversation.igConversationId);
+          const idx = prev.findIndex(c => c.id === conversation.id);
           if (idx >= 0) {
             const updated = [...prev];
             updated[idx] = { ...updated[idx], ...conversation };
@@ -441,7 +440,7 @@ export default function InboxPage() {
         });
 
         setSelected(prev => {
-          if (prev?.igConversationId === message.igConversationId) {
+          if (prev?.id === message.conversationId) {
             setMessages(msgs => {
               if (msgs.find(m => m.id === message.id)) return msgs;
               return [...msgs, message];
@@ -464,7 +463,7 @@ export default function InboxPage() {
       prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c)
     );
     try {
-      const data = await getInboxMessages(conv.igConversationId);
+      const data = await getInboxMessages(conv.id);
       setMessages(Array.isArray(data) ? data : []);
     } catch {}
     setLoadingMsgs(false);
@@ -483,11 +482,10 @@ export default function InboxPage() {
 
     const tempMsg: InboxMessage = {
       id: Date.now(),
-      igConversationId: selected.igConversationId,
+      conversationId: selected.id,
       participantIgsid: selected.participantIgsid,
       direction: 'out',
       messageText: text,
-      fromUsername: 'me',
       igCreatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };

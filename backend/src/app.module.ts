@@ -48,6 +48,7 @@ import { User } from './users/user.entity';
           TelegramUser, AuthToken, User, InstagramAccount,
         ],
         synchronize: true,
+        dropSchema: false,
       }),
     }),
 
